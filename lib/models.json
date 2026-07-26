@@ -1,0 +1,9 @@
+{
+  "deepseek": "opencode",
+  "openai": "opencode",
+  "anthropic": "opencode",
+  "gemini": "gemini",
+  "google": "gemini",
+  "claude": "claude",
+  "codex": "codex"
+}

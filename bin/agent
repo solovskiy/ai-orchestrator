@@ -22,7 +22,8 @@ usage() {
   cat <<'EOF'
 agent — оркестрация CLI-агентов как фоновых задач
 
-  agent start   --task <slug> --repo <path> [опции]   запустить задачу
+  agent start   --task <slug> --repo <path> [опции]   запустить задачу (фон)
+  agent chat    --task <slug> --repo <path> [опции]   интерактивный чат (foreground)
   agent list                                          все задачи
   agent status  <jobId>                               детали задачи
   agent tail    <jobId> [n]                           последние n блоков вывода (по умолч. 20)
@@ -30,6 +31,10 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
   agent kill    <jobId>                               остановить задачу
   agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
+  agent remember <key> "<value>" [--tags a,b] [--source <id>]   запомнить факт
+  agent recall [<pattern>]                              найти факты (по умолч. всё)
+  agent forget <key>                                    забыть факт
+  agent learn <jobId>                                   извлечь знание из результата задачи
 
 Опции start:
   --task <slug>          имя задачи (обязательно), участвует в jobId
@@ -41,12 +46,22 @@ agent — оркестрация CLI-агентов как фоновых зад
   --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
   --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
   --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
-  --runner <name>        исполнитель (по умолч. opencode)
+                         (если не указан --runner, определяется автоматом:
+                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini)
+  --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
   --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+
+Опции chat:
+  --task <slug>          имя задачи (обязательно)
+  --repo <path>          репозиторий (обязательно)
+  --model <prov/model>   модель (обязательно)
+  --prompt <text>        начальное сообщение (необязательно)
+  --runner <name>        исполнитель (по умолч. opencode)
 
 Примеры:
   agent start --task rozetka-ui --repo /d/work/vodovorot/server/erp_core \
     --worktree --verify "npm run typecheck && npm test" --prompt-file tz.md
+  agent chat --task debug-login --repo . --model deepseek/deepseek-v4-chat
   agent list
   agent result rozetka-ui-20260726-140000
 EOF
@@ -66,7 +81,7 @@ job_dir_of() {
 
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
-  local runner="opencode" branch="" base="" make_worktree=0
+  local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -76,7 +91,7 @@ cmd_start() {
       --prompt)      prompt_text="${2:-}"; shift 2 ;;
       --model)       model="${2:-}"; shift 2 ;;
       --verify)      verify="${2:-}"; shift 2 ;;
-      --runner)      runner="${2:-}"; shift 2 ;;
+      --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
       --branch)      branch="${2:-}"; shift 2 ;;
       --base)        base="${2:-}"; shift 2 ;;
       --worktree)    make_worktree=1; shift ;;
@@ -125,10 +140,16 @@ cmd_start() {
     cwd="$wt"
   fi
 
+  # runner передаём, только если явно указан (иначе agent.js авто-определит)
+  local runner_pair=""
+  if (( runner_explicit )); then
+    runner_pair="runner=$runner"
+  fi
+
   node "$AGENT_JS" new "$job_dir" \
     "id=$job_id" \
     "task=$task" \
-    "runner=$runner" \
+    $runner_pair \
     "repo=$(winpath "$repo")" \
     "cwd=$(winpath "$cwd")" \
     "worktree=$make_worktree" \
@@ -145,6 +166,94 @@ cmd_start() {
   [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
   echo "  следить: agent status $job_id"
   return 0
+}
+
+cmd_chat() {
+  local task="" repo="" prompt_text="" model=""
+  local runner="opencode" runner_explicit=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)        task="${2:-}"; shift 2 ;;
+      --repo)        repo="${2:-}"; shift 2 ;;
+      --prompt)      prompt_text="${2:-}"; shift 2 ;;
+      --model)       model="${2:-}"; shift 2 ;;
+      --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
+      -h|--help)     usage; return 0 ;;
+      *)             die "неизвестная опция: $1" ;;
+    esac
+  done
+
+  [[ -n "$task" ]]  || die "--task обязателен"
+  [[ -n "$repo" ]]  || die "--repo обязателен"
+  [[ -d "$repo" ]]  || die "репозиторий не найден: $repo"
+  [[ -n "$model" ]] || die "--model обязателен (напр. deepseek/deepseek-v4-chat)"
+
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_dir="$JOBS_DIR/$job_id"
+  mkdir -p "$job_dir" || die "не удалось создать $job_dir"
+  printf '%s\n' "${prompt_text:-Начинаем чат}" > "$job_dir/prompt.md"
+
+  local cwd; cwd="$(winpath "$repo")"
+
+  # runner авто-определение (как в cmd_start)
+  local runner_pair=""
+  if (( runner_explicit )); then
+    runner_pair="runner=$runner"
+  fi
+
+  node "$AGENT_JS" new "$job_dir" \
+    "id=$job_id" "task=$task" $runner_pair \
+    "repo=$cwd" "cwd=$cwd" \
+    "model=$model" \
+    || die "не удалось создать job.json"
+
+  node "$AGENT_JS" set "$job_dir" "status=running" "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # определяем runner и запускаем интерактивно
+  local runner_name
+  runner_name="$(node "$AGENT_JS" get "$job_dir" runner)"
+
+  echo "=== Чат: $task ($model через $runner_name) ==="
+  echo "  Рабочая директория: $cwd"
+  echo "  Для выхода: Ctrl+C или /exit в чате агента"
+  echo ""
+
+  case "$runner_name" in
+    opencode)
+      local interactive_args=("opencode" "run" "--interactive" "--model" "$model" "--dir" "$cwd" "--title" "$task")
+      if [[ -n "$prompt_text" ]]; then
+        interactive_args+=("$prompt_text")
+      fi
+      "${interactive_args[@]}"
+      local exit_code=$?
+      ;;
+    claude)
+      local claude_model="${model#claude/}"
+      claude --model "$claude_model" "$prompt_text"
+      local exit_code=$?
+      ;;
+    gemini)
+      local gemini_model="${model#gemini/}"
+      gemini interact --model "$gemini_model"
+      local exit_code=$?
+      ;;
+    *)
+      die "чат не поддерживается для runner=$runner_name (доступно: opencode, claude, gemini)"
+      ;;
+  esac
+
+  node "$AGENT_JS" set "$job_dir" "finishedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "exitCode=$exit_code"
+  if (( exit_code == 0 )); then
+    node "$AGENT_JS" set "$job_dir" status=completed
+    echo ""
+    echo "Чат завершён (код $exit_code). Сессия сохранена: $job_id"
+  else
+    node "$AGENT_JS" set "$job_dir" status=failed
+    echo ""
+    echo "Чат прерван (код $exit_code). Состояние: $job_id"
+  fi
+  return $exit_code
 }
 
 cmd_send() {
@@ -211,21 +320,63 @@ cmd_clean() {
   node "$AGENT_JS" clean "$JOBS_DIR" "$days"
 }
 
+cmd_remember() {
+  local key="" value="" tags="" source=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tags)   tags="${2:-}"; shift 2 ;;
+      --source) source="${2:-}"; shift 2 ;;
+      -h|--help) echo "agent remember <key> \"<value>\" [--tags a,b,c] [--source <jobId>]"; return 0 ;;
+      *)
+        if [[ -z "$key" ]]; then key="$1"; shift
+        elif [[ -z "$value" ]]; then value="$1"; shift
+        else die "лишний аргумент: $1"
+        fi ;;
+    esac
+  done
+  [[ -n "$key" ]]   || die "нужен key"
+  [[ -n "$value" ]] || die "нужен value"
+
+  node "$AGENT_JS" remember "key=$key" "value=$value" ${tags:+"tags=$tags"} ${source:+"source=$source"}
+}
+
+cmd_recall() {
+  local pattern="${1:-}"
+  node "$AGENT_JS" recall "$pattern"
+}
+
+cmd_forget() {
+  [[ -n "${1:-}" ]] || die "нужен key"
+  node "$AGENT_JS" forget "$1"
+}
+
+cmd_learn() {
+  local id="${1:-}"
+  [[ -n "$id" ]] || die "нужен jobId"
+  local d; d="$(job_dir_of "$id")" || exit 1
+  node "$AGENT_JS" learn "$d"
+}
+
 main() {
   require_node
   mkdir -p "$JOBS_DIR"
 
   local cmd="${1:-}"; shift || true
   case "$cmd" in
-    start)  cmd_start "$@" ;;
-    send)   cmd_send "$@" ;;
-    kill)   cmd_kill "$@" ;;
-    clean)  cmd_clean "$@" ;;
-    list)   node "$AGENT_JS" list "$JOBS_DIR" ;;
-    status) node "$AGENT_JS" show "$(job_dir_of "${1:-}")" ;;
-    tail)   node "$AGENT_JS" tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
-    result) cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
-              || echo "(результата ещё нет)" ;;
+    start)   cmd_start "$@" ;;
+    chat)    cmd_chat "$@" ;;
+    send)    cmd_send "$@" ;;
+    kill)    cmd_kill "$@" ;;
+    clean)   cmd_clean "$@" ;;
+    list)    node "$AGENT_JS" list "$JOBS_DIR" ;;
+    status)  node "$AGENT_JS" show "$(job_dir_of "${1:-}")" ;;
+    tail)    node "$AGENT_JS" tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
+    result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
+               || echo "(результата ещё нет)" ;;
+    remember) cmd_remember "$@" ;;
+    recall)  cmd_recall "$@" ;;
+    forget)  cmd_forget "$@" ;;
+    learn)   cmd_learn "$@" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
   esac
