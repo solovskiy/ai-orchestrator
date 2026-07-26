@@ -72,13 +72,17 @@
 
 | Префикс модели | Runner |
 |---|---|
+| `opencode/*` | opencode |
 | `deepseek/*` | opencode |
 | `openai/*` | opencode |
 | `claude/*` | claude (Claude Code CLI) |
 | `gemini/*` | gemini (Gemini CLI) |
 | `codex/*` | codex (Codex CLI) |
 
-Можно переопределить явно: `--runner opencode --model claude/sonnet-4`.
+Дефолт, если `--model` не задан — `opencode/deepseek-v4-flash-free`
+(OpenCode Zen, $0, без логина). Для ресёрча или высокой цены ошибки
+переопредели: `--model deepseek/deepseek-v4-pro`. Можно задать и раннер
+явно: `--runner opencode --model claude/sonnet-4`.
 
 ## Память
 

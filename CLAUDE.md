@@ -12,9 +12,9 @@
 ## Быстрый старт
 
 ```bash
-# 1) запустить (возвращает jobId сразу)
-.ai/bin/agent start --task my-task --repo /path/to/project \
-  --model deepseek/deepseek-v4-pro --prompt "сделай ..."
+# 1) запустить (возвращает jobId сразу). Модель по умолчанию — бесплатная
+#    opencode/deepseek-v4-flash-free; для ресёрча добавь --model deepseek/deepseek-v4-pro
+.ai/bin/agent start --task my-task --repo /path/to/project --prompt "сделай ..."
 # 2) ОБЯЗАТЕЛЬНО: ждать завершения — ОТДЕЛЬНЫМ Bash-вызовом с
 #    run_in_background, иначе уведомление о завершении не придёт
 .ai/bin/agent wait <jobId>

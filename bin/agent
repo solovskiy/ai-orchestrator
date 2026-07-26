@@ -127,6 +127,10 @@ cmd_start() {
     esac
   done
 
+  # Дефолтная модель, если --model не задан: бесплатная OpenCode Zen.
+  # Переопределить — --model (для ресёрча: deepseek/deepseek-v4-pro).
+  model="${model:-opencode/deepseek-v4-flash-free}"
+
   [[ -n "$task" ]] || die "--task обязателен"
   [[ -n "$repo" ]] || die "--repo обязателен"
   [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
