@@ -6,17 +6,21 @@
 
 set -uo pipefail
 
-AI_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="$AI_HOME/lib"
-JOBS_DIR="$AI_HOME/jobs"
-AGENT_JS="$LIB/agent.js"
-
 die() { echo "agent: $*" >&2; exit 1; }
 
 # Приводит путь к виду D:/foo/bar — понятен и Git Bash, и Windows-бинарям.
 winpath() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; return; fi
+  if command -v wslpath >/dev/null 2>&1; then wslpath -m "$1"; return; fi
+  echo "$1"
 }
+
+AI_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB="$AI_HOME/lib"
+JOBS_DIR="$AI_HOME/jobs"
+AGENT_JS="$LIB/agent.js"
+AGENT_JS_WIN="$(winpath "$AGENT_JS")"
+JOBS_DIR_WIN="$(winpath "$JOBS_DIR")"
 
 usage() {
   cat <<'EOF'
@@ -67,8 +71,27 @@ agent — оркестрация CLI-агентов как фоновых зад
 EOF
 }
 
+# Запускает agent.js через $NODE, конвертируя Unix-пути в Windows для node.exe.
+agent_js() {
+  local args=()
+  for a in "$@"; do
+    if [[ "$a" == /* ]]; then
+      args+=("$(winpath "$a")")
+    else
+      args+=("$a")
+    fi
+  done
+  "$NODE" "$AGENT_JS_WIN" "${args[@]}"
+}
+
 require_node() {
-  command -v node >/dev/null 2>&1 || die "node не найден в PATH"
+  if command -v node >/dev/null 2>&1; then
+    NODE=node
+  elif command -v node.exe >/dev/null 2>&1; then
+    NODE=node.exe
+  else
+    die "node не найден в PATH"
+  fi
 }
 
 job_dir_of() {
@@ -82,6 +105,7 @@ job_dir_of() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
+  local max_parallel="" force=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -95,6 +119,8 @@ cmd_start() {
       --branch)      branch="${2:-}"; shift 2 ;;
       --base)        base="${2:-}"; shift 2 ;;
       --worktree)    make_worktree=1; shift ;;
+      --max-parallel) max_parallel="${2:-}"; shift 2 ;;
+      --force)        force=1; shift ;;
       -h|--help)     usage; return 0 ;;
       *)             die "неизвестная опция: $1" ;;
     esac
@@ -117,8 +143,11 @@ cmd_start() {
   fi
   [[ -n "${prompt// /}" ]] || die "пустое ТЗ (--prompt-file / --prompt / stdin)"
 
-  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)-$$-$(printf '%04x' $RANDOM)"
   local job_dir="$JOBS_DIR/$job_id"
+  if [[ -e "$job_dir" ]]; then
+    die "коллизия jobId: $job_dir уже существует, перезапусти"
+  fi
   mkdir -p "$job_dir" || die "не удалось создать $job_dir"
   printf '%s\n' "$prompt" > "$job_dir/prompt.md"
 
@@ -146,7 +175,7 @@ cmd_start() {
     runner_pair="runner=$runner"
   fi
 
-  node "$AGENT_JS" new "$job_dir" \
+  agent_js new "$job_dir" \
     "id=$job_id" \
     "task=$task" \
     $runner_pair \
@@ -157,6 +186,13 @@ cmd_start() {
     "model=$model" \
     "verifyCmd=$verify" \
     || die "не удалось создать job.json"
+
+  local running_count max_parallel_limit
+  running_count="$(agent_js running-count "$JOBS_DIR")"
+  max_parallel_limit="${max_parallel:-${AGENT_MAX_PARALLEL:-3}}"
+  if (( force != 1 && running_count >= max_parallel_limit )); then
+    die "уже $running_count задач(и) в статусе 'running' (лимит: $max_parallel_limit). Используй --force чтобы запустить, или agent kill для остановки лишних"
+  fi
 
   nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
   disown 2>/dev/null || true
@@ -189,8 +225,11 @@ cmd_chat() {
   [[ -d "$repo" ]]  || die "репозиторий не найден: $repo"
   [[ -n "$model" ]] || die "--model обязателен (напр. deepseek/deepseek-v4-chat)"
 
-  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)-$$-$(printf '%04x' $RANDOM)"
   local job_dir="$JOBS_DIR/$job_id"
+  if [[ -e "$job_dir" ]]; then
+    die "коллизия jobId: $job_dir уже существует, перезапусти"
+  fi
   mkdir -p "$job_dir" || die "не удалось создать $job_dir"
   printf '%s\n' "${prompt_text:-Начинаем чат}" > "$job_dir/prompt.md"
 
@@ -202,17 +241,17 @@ cmd_chat() {
     runner_pair="runner=$runner"
   fi
 
-  node "$AGENT_JS" new "$job_dir" \
+  agent_js new "$job_dir" \
     "id=$job_id" "task=$task" $runner_pair \
     "repo=$cwd" "cwd=$cwd" \
     "model=$model" \
     || die "не удалось создать job.json"
 
-  node "$AGENT_JS" set "$job_dir" "status=running" "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  agent_js set "$job_dir" "status=running" "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   # определяем runner и запускаем интерактивно
   local runner_name
-  runner_name="$(node "$AGENT_JS" get "$job_dir" runner)"
+  runner_name="$(agent_js get "$job_dir" runner)"
 
   echo "=== Чат: $task ($model через $runner_name) ==="
   echo "  Рабочая директория: $cwd"
@@ -243,13 +282,13 @@ cmd_chat() {
       ;;
   esac
 
-  node "$AGENT_JS" set "$job_dir" "finishedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "exitCode=$exit_code"
+  agent_js set "$job_dir" "finishedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "exitCode=$exit_code"
   if (( exit_code == 0 )); then
-    node "$AGENT_JS" set "$job_dir" status=completed
+    agent_js set "$job_dir" status=completed
     echo ""
     echo "Чат завершён (код $exit_code). Сессия сохранена: $job_id"
   else
-    node "$AGENT_JS" set "$job_dir" status=failed
+    agent_js set "$job_dir" status=failed
     echo ""
     echo "Чат прерван (код $exit_code). Состояние: $job_id"
   fi
@@ -262,24 +301,27 @@ cmd_send() {
   local src; src="$(job_dir_of "$id")" || exit 1
   [[ -n "$msg" ]] || die "нужен текст сообщения"
 
-  local session; session="$(node "$AGENT_JS" get "$src" sessionId)"
+  local session; session="$(agent_js get "$src" sessionId)"
   [[ -n "$session" && "$session" != "null" ]] \
     || die "у задачи $id нет sessionId — продолжать нечего"
 
   local task repo cwd runner model verify
-  task="$(node "$AGENT_JS" get "$src" task)"
-  repo="$(node "$AGENT_JS" get "$src" repo)"
-  cwd="$(node "$AGENT_JS" get "$src" cwd)"
-  runner="$(node "$AGENT_JS" get "$src" runner)"
-  model="$(node "$AGENT_JS" get "$src" model)"
-  verify="$(node "$AGENT_JS" get "$src" verifyCmd)"
+  task="$(agent_js get "$src" task)"
+  repo="$(agent_js get "$src" repo)"
+  cwd="$(agent_js get "$src" cwd)"
+  runner="$(agent_js get "$src" runner)"
+  model="$(agent_js get "$src" model)"
+  verify="$(agent_js get "$src" verifyCmd)"
 
-  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)-$$-$(printf '%04x' $RANDOM)"
   local job_dir="$JOBS_DIR/$job_id"
-  mkdir -p "$job_dir"
+  if [[ -e "$job_dir" ]]; then
+    die "коллизия jobId: $job_dir уже существует, перезапусти"
+  fi
+  mkdir -p "$job_dir" || die "не удалось создать $job_dir"
   printf '%s\n' "$msg" > "$job_dir/prompt.md"
 
-  node "$AGENT_JS" new "$job_dir" \
+  agent_js new "$job_dir" \
     "id=$job_id" "task=$task" "runner=$runner" "repo=$repo" "cwd=$cwd" \
     "model=$model" "verifyCmd=$verify" \
     "sessionId=$session" "resume=true" "continuesJob=$id" \
@@ -296,7 +338,7 @@ cmd_send() {
 cmd_kill() {
   local id="${1:-}"
   local d; d="$(job_dir_of "$id")" || exit 1
-  local pid; pid="$(node "$AGENT_JS" get "$d" pid)"
+  local pid; pid="$(agent_js get "$d" pid)"
 
   if [[ -z "$pid" || "$pid" == "null" ]]; then
     echo "у задачи нет записанного pid — возможно, она уже завершилась"
@@ -305,7 +347,7 @@ cmd_kill() {
       || taskkill //F //T //PID "$pid" >/dev/null 2>&1 \
       || echo "не удалось остановить процесс $pid (возможно, уже мёртв)"
   fi
-  node "$AGENT_JS" set "$d" status=killed
+  agent_js set "$d" status=killed
   echo "$id помечена как killed"
 }
 
@@ -317,7 +359,7 @@ cmd_clean() {
       *) die "неизвестная опция: $1" ;;
     esac
   done
-  node "$AGENT_JS" clean "$JOBS_DIR" "$days"
+  agent_js clean "$JOBS_DIR" "$days"
 }
 
 cmd_remember() {
@@ -337,24 +379,24 @@ cmd_remember() {
   [[ -n "$key" ]]   || die "нужен key"
   [[ -n "$value" ]] || die "нужен value"
 
-  node "$AGENT_JS" remember "key=$key" "value=$value" ${tags:+"tags=$tags"} ${source:+"source=$source"}
+  agent_js remember "key=$key" "value=$value" ${tags:+"tags=$tags"} ${source:+"source=$source"}
 }
 
 cmd_recall() {
   local pattern="${1:-}"
-  node "$AGENT_JS" recall "$pattern"
+  agent_js recall "$pattern"
 }
 
 cmd_forget() {
   [[ -n "${1:-}" ]] || die "нужен key"
-  node "$AGENT_JS" forget "$1"
+  agent_js forget "$1"
 }
 
 cmd_learn() {
   local id="${1:-}"
   [[ -n "$id" ]] || die "нужен jobId"
   local d; d="$(job_dir_of "$id")" || exit 1
-  node "$AGENT_JS" learn "$d"
+  agent_js learn "$d"
 }
 
 main() {
@@ -368,9 +410,9 @@ main() {
     send)    cmd_send "$@" ;;
     kill)    cmd_kill "$@" ;;
     clean)   cmd_clean "$@" ;;
-    list)    node "$AGENT_JS" list "$JOBS_DIR" ;;
-    status)  node "$AGENT_JS" show "$(job_dir_of "${1:-}")" ;;
-    tail)    node "$AGENT_JS" tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
+    list)    agent_js list "$JOBS_DIR" ;;
+    status)  agent_js show "$(job_dir_of "${1:-}")" ;;
+    tail)    agent_js tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
                || echo "(результата ещё нет)" ;;
     remember) cmd_remember "$@" ;;
