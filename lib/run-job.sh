@@ -13,12 +13,24 @@ set -uo pipefail
 JOB_DIR="${1:?run-job.sh: не передан путь к задаче}"
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-NODE="${NODE:-$(command -v node)}"
-NODE="${NODE:-node}"
-AGENT_JS="${AGENT_JS_WIN:-$LIB/agent.js}"
+winpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; return; fi
+  if command -v wslpath >/dev/null 2>&1; then wslpath -m "$1"; return; fi
+  echo "$1"
+}
 
-jset() { "$NODE" "$AGENT_JS" set "$JOB_DIR" "$@" >/dev/null 2>&1; }
-jget() { "$NODE" "$AGENT_JS" get "$JOB_DIR" "$1"; }
+NODE="${NODE:-$(command -v node)}"
+NODE="${NODE:-$(command -v node.exe)}"
+NODE="${NODE:-node}"
+
+AGENT_JS="${AGENT_JS_WIN:-}"
+if [[ -z "$AGENT_JS" ]]; then
+  AGENT_JS="$(winpath "$LIB/agent.js")"
+fi
+JOB_DIR_WIN="$(winpath "$JOB_DIR")"
+
+jset() { "$NODE" "$AGENT_JS" set "$JOB_DIR_WIN" "$@" >/dev/null 2>&1; }
+jget() { "$NODE" "$AGENT_JS" get "$JOB_DIR_WIN" "$1"; }
 
 CWD="$(jget cwd)"
 [[ -d "$CWD" ]] || CWD="."
@@ -27,7 +39,7 @@ CWD="$(jget cwd)"
 ARGS=()
 while IFS= read -r -d '' item; do
   ARGS+=("$item")
-done < <("$NODE" "$AGENT_JS" build-args "$JOB_DIR")
+done < <("$NODE" "$AGENT_JS" build-args "$JOB_DIR_WIN")
 
 if (( ${#ARGS[@]} == 0 )); then
   jset status=failed exitCode=127 "error=не удалось собрать команду запуска"
@@ -45,7 +57,7 @@ wait "$CHILD"
 EXIT=$?
 
 # --- разобрать поток, записать итог, извлечь result.md ---
-"$NODE" "$AGENT_JS" finalize "$JOB_DIR" "$EXIT" >/dev/null 2>&1
+"$NODE" "$AGENT_JS" finalize "$JOB_DIR_WIN" "$EXIT" >/dev/null 2>&1
 
 # --- проверка: гоняется здесь, чтобы её вывод не попадал в контекст чата ---
 VERIFY="$(jget verifyCmd)"
