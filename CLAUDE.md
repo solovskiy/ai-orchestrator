@@ -12,12 +12,26 @@
 ## Быстрый старт
 
 ```bash
+# 1) запустить (возвращает jobId сразу)
 .ai/bin/agent start --task my-task --repo /path/to/project \
-  --model deepseek/deepseek-v4-pro \
-  --prompt "сделай ..."
-.ai/bin/agent list
+  --model deepseek/deepseek-v4-pro --prompt "сделай ..."
+# 2) ОБЯЗАТЕЛЬНО: ждать завершения — ОТДЕЛЬНЫМ Bash-вызовом с
+#    run_in_background, иначе уведомление о завершении не придёт
+.ai/bin/agent wait <jobId>
+# 3) забрать результат
 .ai/bin/agent result <jobId>
 ```
+
+## Критично (иначе тихие провалы)
+
+- **Не звать `opencode run` напрямую** — только через `agent`, иначе
+  теряются job.json, статус, стоимость и возможность продолжить сессию.
+- **После `start` — всегда `agent wait <jobId>` в фоне.** `start`
+  отсоединён (nohup), харнесс о нём не знает; уведомление о завершении даёт
+  только `wait`, запущенный оркестратором через фоновый Bash.
+- **`verify: passed` ≠ задача сделана.** Всегда сверять поле `changedFiles`
+  в `agent status` / `git diff --stat`: пустой дифф при `passed` = агент
+  ничего не тронул.
 
 ## Структура
 
@@ -32,9 +46,14 @@
   memory/index.json   долговременная память
 ```
 
-Когда и что делегировать (исследование vs код), критерии, чек-лист
-NEVER/ASK/ALWAYS — `docs/workflow.md`. Проекты-потребители подключают его
-через `@D:/work/vodovorot/.ai/docs/workflow.md` в своём CLAUDE.md, вместо
-дублирования текста.
+## Полные правила делегирования
+
+Когда что делегировать (исследование vs код), критерии, чек-лист
+NEVER/ASK/ALWAYS, troubleshooting — импортируется прямо сюда:
+
+@docs/workflow.md
+
+Проекты-потребители подключают тот же файл через
+`@D:/work/vodovorot/.ai/docs/workflow.md` в своём CLAUDE.md — не дублируя текст.
 
 Полная документация (команды, `--verify`, написание ТЗ) — `.ai/README.md`.
