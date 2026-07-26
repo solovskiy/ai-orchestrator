@@ -194,7 +194,7 @@ cmd_start() {
     die "уже $running_count задач(и) в статусе 'running' (лимит: $max_parallel_limit). Используй --force чтобы запустить, или agent kill для остановки лишних"
   fi
 
-  nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
+  NODE="$NODE" AGENT_JS_WIN="$AGENT_JS_WIN" nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
   disown 2>/dev/null || true
 
   echo "$job_id"
@@ -327,7 +327,7 @@ cmd_send() {
     "sessionId=$session" "resume=true" "continuesJob=$id" \
     || die "не удалось создать job.json"
 
-  nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
+  NODE="$NODE" AGENT_JS_WIN="$AGENT_JS_WIN" nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
   disown 2>/dev/null || true
 
   echo "$job_id"
