@@ -305,6 +305,11 @@ cmd_send() {
   [[ -n "$session" && "$session" != "null" ]] \
     || die "у задачи $id нет sessionId — продолжать нечего"
 
+  # Гонка: два параллельных продолжения одной сессии портят её историю.
+  if [[ "$(agent_js session-busy "$JOBS_DIR" "$session")" == "1" ]]; then
+    die "сессия $session уже выполняется в другой задаче — параллельное продолжение ОДНОЙ сессии ломает её историю. Дождись завершения (agent list) или останови ту задачу (agent kill)"
+  fi
+
   local task repo cwd runner model verify
   task="$(agent_js get "$src" task)"
   repo="$(agent_js get "$src" repo)"
