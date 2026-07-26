@@ -31,6 +31,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent list                                          все задачи
   agent status  <jobId>                               детали задачи
   agent tail    <jobId> [n]                           последние n блоков вывода (по умолч. 20)
+  agent wait    <jobId> [<jobId>...] [--timeout N]    ждать завершения (запускать в фоне — тогда придёт уведомление)
   agent result  <jobId>                               только итоговый ответ агента
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
   agent kill    <jobId>                               остановить задачу
@@ -200,7 +201,7 @@ cmd_start() {
   echo "$job_id"
   echo "  рабочая директория: $cwd"
   [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
-  echo "  следить: agent status $job_id"
+  echo "  следить: agent status $job_id  ·  ждать (в фоне!): agent wait $job_id"
   return 0
 }
 
@@ -337,6 +338,61 @@ cmd_send() {
 
   echo "$job_id"
   echo "  продолжает сессию $session (из $id)"
+  echo "  ждать (в фоне!): agent wait $job_id"
+  return 0
+}
+
+# Блокирующее ожидание терминального статуса. Смысл — в том, ЧТО его
+# запускают: оркестратор (Claude Code) через свой фоновый Bash, и тогда
+# харнесс присылает уведомление, когда wait выйдет. Сам agent start этого
+# не умеет — задача отсоединена через nohup, харнесс о ней не знает.
+cmd_wait() {
+  local timeout=1800 interval=8 ids=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout)  timeout="${2:-1800}"; shift 2 ;;
+      --interval) interval="${2:-8}"; shift 2 ;;
+      -h|--help)  echo "agent wait <jobId> [<jobId>...] [--timeout сек] [--interval сек]"; return 0 ;;
+      *)          ids+=("$1"); shift ;;
+    esac
+  done
+  (( ${#ids[@]} > 0 )) || die "нужен хотя бы один jobId"
+
+  local dirs=()
+  local id d
+  for id in "${ids[@]}"; do
+    d="$(job_dir_of "$id")" || exit 1
+    dirs+=("$d")
+  done
+
+  local waited=0
+  while :; do
+    local pending=0 st
+    for d in "${dirs[@]}"; do
+      st="$(agent_js get "$d" status)"
+      case "$st" in
+        completed|failed|killed) ;;
+        *) pending=$((pending + 1)) ;;
+      esac
+    done
+    (( pending == 0 )) && break
+    if (( waited >= timeout )); then
+      echo "wait: таймаут ${timeout}с — ещё выполняются $pending задач(и). Проверь: agent status <id>" >&2
+      return 2
+    fi
+    sleep "$interval"
+    waited=$((waited + interval))
+  done
+
+  # все терминальны — компактный итог (одна строка на задачу)
+  local ex cf
+  for id in "${ids[@]}"; do
+    d="$(job_dir_of "$id")"
+    st="$(agent_js get "$d" status)"
+    ex="$(agent_js get "$d" exitCode)"
+    cf="$(agent_js get "$d" changedFiles)"
+    echo "$id: $st (код ${ex:-—}${cf:+, изменений $cf})"
+  done
   return 0
 }
 
@@ -418,6 +474,7 @@ main() {
     list)    agent_js list "$JOBS_DIR" ;;
     status)  agent_js show "$(job_dir_of "${1:-}")" ;;
     tail)    agent_js tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
+    wait)    cmd_wait "$@" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
                || echo "(результата ещё нет)" ;;
     remember) cmd_remember "$@" ;;
