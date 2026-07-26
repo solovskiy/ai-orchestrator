@@ -15,10 +15,10 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NODE="${NODE:-$(command -v node)}"
 NODE="${NODE:-node}"
-AGENT_JS_WIN="${AGENT_JS_WIN:-$LIB/agent.js}"
+AGENT_JS="${AGENT_JS_WIN:-$LIB/agent.js}"
 
-jset() { "$NODE" "$AGENT_JS_WIN" set "$JOB_DIR" "$@" >/dev/null 2>&1; }
-jget() { "$NODE" "$AGENT_JS_WIN" get "$JOB_DIR" "$1"; }
+jset() { "$NODE" "$AGENT_JS" set "$JOB_DIR" "$@" >/dev/null 2>&1; }
+jget() { "$NODE" "$AGENT_JS" get "$JOB_DIR" "$1"; }
 
 CWD="$(jget cwd)"
 [[ -d "$CWD" ]] || CWD="."
@@ -27,7 +27,7 @@ CWD="$(jget cwd)"
 ARGS=()
 while IFS= read -r -d '' item; do
   ARGS+=("$item")
-done < <("$NODE" "$AGENT_JS_WIN" build-args "$JOB_DIR")
+done < <("$NODE" "$AGENT_JS" build-args "$JOB_DIR")
 
 if (( ${#ARGS[@]} == 0 )); then
   jset status=failed exitCode=127 "error=не удалось собрать команду запуска"
@@ -45,7 +45,7 @@ wait "$CHILD"
 EXIT=$?
 
 # --- разобрать поток, записать итог, извлечь result.md ---
-"$NODE" "$AGENT_JS_WIN" finalize "$JOB_DIR" "$EXIT" >/dev/null 2>&1
+"$NODE" "$AGENT_JS" finalize "$JOB_DIR" "$EXIT" >/dev/null 2>&1
 
 # --- проверка: гоняется здесь, чтобы её вывод не попадал в контекст чата ---
 VERIFY="$(jget verifyCmd)"
