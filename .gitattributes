@@ -1,0 +1,9 @@
+# bash-скрипты обязаны быть с LF: CRLF ломает шебанг на Linux/macOS
+# ("bad interpreter: /usr/bin/env bash^M"). Каталог переносимый — это важно.
+* text=auto eol=lf
+
+# PowerShell — родные для Windows окончания строк
+*.ps1 text eol=crlf
+
+# Бинарное содержимое не трогать
+*.reg -text

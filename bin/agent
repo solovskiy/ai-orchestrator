@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# agent — запуск CLI-агентов как отсоединённых фоновых задач.
+#
+# Всё состояние живёт в этой же папке (.ai), путей наружу нет —
+# каталог можно целиком перенести на другую машину.
+
+set -uo pipefail
+
+AI_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB="$AI_HOME/lib"
+JOBS_DIR="$AI_HOME/jobs"
+AGENT_JS="$LIB/agent.js"
+
+die() { echo "agent: $*" >&2; exit 1; }
+
+# Приводит путь к виду D:/foo/bar — понятен и Git Bash, и Windows-бинарям.
+winpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
+}
+
+usage() {
+  cat <<'EOF'
+agent — оркестрация CLI-агентов как фоновых задач
+
+  agent start   --task <slug> --repo <path> [опции]   запустить задачу
+  agent list                                          все задачи
+  agent status  <jobId>                               детали задачи
+  agent tail    <jobId> [n]                           последние n блоков вывода (по умолч. 20)
+  agent result  <jobId>                               только итоговый ответ агента
+  agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
+  agent kill    <jobId>                               остановить задачу
+  agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
+
+Опции start:
+  --task <slug>          имя задачи (обязательно), участвует в jobId
+  --repo <path>          репозиторий, в котором работает агент (обязательно)
+  --prompt-file <path>   ТЗ из файла
+  --prompt <text>        ТЗ строкой
+                         (если ни того ни другого — читается со stdin)
+  --worktree             создать git worktree под задачу и работать в нём
+  --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
+  --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
+  --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
+  --runner <name>        исполнитель (по умолч. opencode)
+  --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+
+Примеры:
+  agent start --task rozetka-ui --repo /d/work/vodovorot/server/erp_core \
+    --worktree --verify "npm run typecheck && npm test" --prompt-file tz.md
+  agent list
+  agent result rozetka-ui-20260726-140000
+EOF
+}
+
+require_node() {
+  command -v node >/dev/null 2>&1 || die "node не найден в PATH"
+}
+
+job_dir_of() {
+  local id="$1"
+  [[ -n "$id" ]] || die "не указан jobId"
+  local d="$JOBS_DIR/$id"
+  [[ -d "$d" ]] || die "задача не найдена: $id"
+  echo "$d"
+}
+
+cmd_start() {
+  local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
+  local runner="opencode" branch="" base="" make_worktree=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)        task="${2:-}"; shift 2 ;;
+      --repo)        repo="${2:-}"; shift 2 ;;
+      --prompt-file) prompt_file="${2:-}"; shift 2 ;;
+      --prompt)      prompt_text="${2:-}"; shift 2 ;;
+      --model)       model="${2:-}"; shift 2 ;;
+      --verify)      verify="${2:-}"; shift 2 ;;
+      --runner)      runner="${2:-}"; shift 2 ;;
+      --branch)      branch="${2:-}"; shift 2 ;;
+      --base)        base="${2:-}"; shift 2 ;;
+      --worktree)    make_worktree=1; shift ;;
+      -h|--help)     usage; return 0 ;;
+      *)             die "неизвестная опция: $1" ;;
+    esac
+  done
+
+  [[ -n "$task" ]] || die "--task обязателен"
+  [[ -n "$repo" ]] || die "--repo обязателен"
+  [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
+  [[ "$task" =~ ^[A-Za-z0-9._-]+$ ]] || die "--task: допустимы буквы, цифры, . _ -"
+
+  # --- ТЗ: файл > строка > stdin ---
+  local prompt=""
+  if [[ -n "$prompt_file" ]]; then
+    [[ -f "$prompt_file" ]] || die "файл ТЗ не найден: $prompt_file"
+    prompt="$(cat "$prompt_file")"
+  elif [[ -n "$prompt_text" ]]; then
+    prompt="$prompt_text"
+  elif [[ ! -t 0 ]]; then
+    prompt="$(cat)"
+  fi
+  [[ -n "${prompt// /}" ]] || die "пустое ТЗ (--prompt-file / --prompt / stdin)"
+
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_dir="$JOBS_DIR/$job_id"
+  mkdir -p "$job_dir" || die "не удалось создать $job_dir"
+  printf '%s\n' "$prompt" > "$job_dir/prompt.md"
+
+  # --- рабочая директория: worktree или сам репозиторий ---
+  local cwd="$repo"
+  if (( make_worktree )); then
+    git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 \
+      || die "не git-репозиторий: $repo"
+    branch="${branch:-agent/$task}"
+    local wt="$repo/.claude/worktrees/$task"
+    [[ -e "$wt" ]] && die "worktree уже существует: $wt"
+    if [[ -n "$base" ]]; then
+      git -C "$repo" worktree add "$wt" -b "$branch" "$base" >/dev/null \
+        || die "git worktree add не удался"
+    else
+      git -C "$repo" worktree add "$wt" -b "$branch" >/dev/null \
+        || die "git worktree add не удался"
+    fi
+    cwd="$wt"
+  fi
+
+  node "$AGENT_JS" new "$job_dir" \
+    "id=$job_id" \
+    "task=$task" \
+    "runner=$runner" \
+    "repo=$(winpath "$repo")" \
+    "cwd=$(winpath "$cwd")" \
+    "worktree=$make_worktree" \
+    "branch=$branch" \
+    "model=$model" \
+    "verifyCmd=$verify" \
+    || die "не удалось создать job.json"
+
+  nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+
+  echo "$job_id"
+  echo "  рабочая директория: $cwd"
+  [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
+  echo "  следить: agent status $job_id"
+  return 0
+}
+
+cmd_send() {
+  local id="${1:-}"; shift || true
+  local msg="${1:-}"
+  local src; src="$(job_dir_of "$id")" || exit 1
+  [[ -n "$msg" ]] || die "нужен текст сообщения"
+
+  local session; session="$(node "$AGENT_JS" get "$src" sessionId)"
+  [[ -n "$session" && "$session" != "null" ]] \
+    || die "у задачи $id нет sessionId — продолжать нечего"
+
+  local task repo cwd runner model verify
+  task="$(node "$AGENT_JS" get "$src" task)"
+  repo="$(node "$AGENT_JS" get "$src" repo)"
+  cwd="$(node "$AGENT_JS" get "$src" cwd)"
+  runner="$(node "$AGENT_JS" get "$src" runner)"
+  model="$(node "$AGENT_JS" get "$src" model)"
+  verify="$(node "$AGENT_JS" get "$src" verifyCmd)"
+
+  local job_id="${task}-$(date +%Y%m%d-%H%M%S)"
+  local job_dir="$JOBS_DIR/$job_id"
+  mkdir -p "$job_dir"
+  printf '%s\n' "$msg" > "$job_dir/prompt.md"
+
+  node "$AGENT_JS" new "$job_dir" \
+    "id=$job_id" "task=$task" "runner=$runner" "repo=$repo" "cwd=$cwd" \
+    "model=$model" "verifyCmd=$verify" \
+    "sessionId=$session" "resume=true" "continuesJob=$id" \
+    || die "не удалось создать job.json"
+
+  nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+
+  echo "$job_id"
+  echo "  продолжает сессию $session (из $id)"
+  return 0
+}
+
+cmd_kill() {
+  local id="${1:-}"
+  local d; d="$(job_dir_of "$id")" || exit 1
+  local pid; pid="$(node "$AGENT_JS" get "$d" pid)"
+
+  if [[ -z "$pid" || "$pid" == "null" ]]; then
+    echo "у задачи нет записанного pid — возможно, она уже завершилась"
+  else
+    kill "$pid" 2>/dev/null \
+      || taskkill //F //T //PID "$pid" >/dev/null 2>&1 \
+      || echo "не удалось остановить процесс $pid (возможно, уже мёртв)"
+  fi
+  node "$AGENT_JS" set "$d" status=killed
+  echo "$id помечена как killed"
+}
+
+cmd_clean() {
+  local days=7
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --days) days="${2:-7}"; shift 2 ;;
+      *) die "неизвестная опция: $1" ;;
+    esac
+  done
+  node "$AGENT_JS" clean "$JOBS_DIR" "$days"
+}
+
+main() {
+  require_node
+  mkdir -p "$JOBS_DIR"
+
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    start)  cmd_start "$@" ;;
+    send)   cmd_send "$@" ;;
+    kill)   cmd_kill "$@" ;;
+    clean)  cmd_clean "$@" ;;
+    list)   node "$AGENT_JS" list "$JOBS_DIR" ;;
+    status) node "$AGENT_JS" show "$(job_dir_of "${1:-}")" ;;
+    tail)   node "$AGENT_JS" tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
+    result) cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
+              || echo "(результата ещё нет)" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "неизвестная команда: $cmd (agent --help)" ;;
+  esac
+}
+
+main "$@"
