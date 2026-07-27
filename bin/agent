@@ -459,6 +459,14 @@ cmd_send() {
   model="$(agent_js get "$src" model)"
   verify="$(agent_js get "$src" verifyCmd)"
 
+  # Проверка лимита параллельных задач
+  local running_count max_parallel_limit
+  running_count="$(agent_js running-count "$JOBS_DIR")"
+  max_parallel_limit="${AGENT_MAX_PARALLEL:-3}"
+  if (( running_count >= max_parallel_limit )); then
+    die "уже $running_count задач(и) в статусе 'running' (лимит: $max_parallel_limit). Дождись завершения или используй agent kill"
+  fi
+
   local job_id="${task}-$(date +%Y%m%d-%H%M%S)-$$-$(printf '%04x' $RANDOM)"
   local job_dir="$JOBS_DIR/$job_id"
   if [[ -e "$job_dir" ]]; then
@@ -715,8 +723,8 @@ main() {
     clean)   cmd_clean "$@" ;;
     worktree-gc) cmd_worktree_gc "$@" ;;
     list)    agent_js list "$JOBS_DIR" ;;
-    status)  agent_js show "$(job_dir_of "${1:-}")" ;;
-    tail)    agent_js tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
+    status)  d="$(job_dir_of "${1:-}")" || exit 1; agent_js show "$d" ;;
+    tail)    d="$(job_dir_of "${1:-}")" || exit 1; agent_js tail "$d" "${2:-20}" ;;
     wait)    cmd_wait "$@" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
                || echo "(результата ещё нет)" ;;
@@ -724,7 +732,7 @@ main() {
     recall)  cmd_recall "$@" ;;
     forget)  cmd_forget "$@" ;;
     learn)   cmd_learn "$@" ;;
-    stats)   agent_js stats "$JOBS_DIR" "${1:-}" ;;
+    stats)   agent_js stats "$JOBS_DIR" "$*" ;;
     capability) agent_js capability "${1:-}" ;;
     init)    cmd_init ;;
     dashboard) cmd_dashboard "$@" ;;
@@ -738,7 +746,7 @@ main() {
         delete) agent_js agent-delete "$(winpath "$AI_HOME/agents")" "${1:-}" ;;
         *) die "agent agent: неизвестная подкоманда: $sub (list, show, create, delete)" ;;
       esac ;;
-    heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
+    heal)    d="$(job_dir_of "${1:-}")" || exit 1; agent_js heal "$d" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
   esac
