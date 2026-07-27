@@ -54,6 +54,7 @@ tr { cursor: pointer; }
 .status.killed { background: #fef3c7; color: #92400e; }
 .status.pending { background: #f3f4f6; color: #6b7280; }
 .status.warning { background: #fef3c7; color: #92400e; }
+.status.diag-error { background: #fff7ed; color: #9a3412; }
 @media (prefers-color-scheme: dark) {
   .status.completed { background: #14532d; color: #86efac; }
   .status.failed { background: #7f1d1d; color: #fca5a5; }
@@ -61,6 +62,7 @@ tr { cursor: pointer; }
   .status.killed { background: #713f12; color: #fde68a; }
   .status.pending { background: #374151; color: #d1d5db; }
   .status.warning { background: #713f12; color: #fde68a; }
+  .status.diag-error { background: #7c2d12; color: #fdba74; }
 }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
 .card h3 { font-size: 14px; margin-bottom: 8px; }
@@ -184,6 +186,14 @@ function statusBadge(s, healthWarnings) {
     title = ' title="⚠ ' + esc(msgs.join('; ')) + '"';
   }
   return '<span class="' + cls + '"' + title + '>' + esc(s) + '</span>';
+}
+
+function diagBadge(outcome, errorMsg) {
+  if (!outcome) return '';
+  var show = ['permission_rejected', 'validation_error', 'abandoned', 'error'];
+  if (show.indexOf(outcome) === -1) return '';
+  var title = errorMsg ? ' title="' + esc(errorMsg.slice(0, 120)) + '"' : '';
+  return ' <span class="status diag-error"' + title + '>' + esc(outcome) + '</span>';
 }
 
 function fmtNum(n) {
@@ -317,7 +327,7 @@ function renderJobs() {
     tableHtml += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
     tableHtml += '<td style="font-family:monospace;font-size:11px">' + esc(shortId) + '</td>';
     tableHtml += '<td>' + esc(j.task || '') + '</td>';
-    tableHtml += '<td>' + statusBadge(j.status, j.healthWarnings) + '</td>';
+    tableHtml += '<td>' + statusBadge(j.status, j.healthWarnings) + diagBadge(j.diagnosisOutcome, j.diagnosisError) + '</td>';
     tableHtml += '<td>' + esc(j.model) + '</td>';
     tableHtml += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
     tableHtml += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
