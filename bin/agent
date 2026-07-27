@@ -34,6 +34,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent wait    <jobId> [<jobId>...] [--timeout N]    ждать завершения (запускать в фоне — тогда придёт уведомление)
   agent result  <jobId>                               только итоговый ответ агента
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
+  agent talk    <jobId> "<текст>"                     реплика в ЖИВУЮ интерактивную сессию (без ожидания)
   agent kill    <jobId>                               остановить задачу
   agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
   agent remember <key> "<value>" [--tags a,b] [--source <id>]   запомнить факт
@@ -55,6 +56,10 @@ agent — оркестрация CLI-агентов как фоновых зад
                          deepseek/* → opencode, claude/* → claude, gemini/* → gemini)
   --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
   --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+  --interactive          не завершать сессию после первого ответа — держать
+                         её открытой для `agent talk` (пока только runner
+                         opencode; если канал не поднялся — тихий откат к
+                         обычному режиму, см. `agent status`)
 
 Опции chat:
   --task <slug>          имя задачи (обязательно)
@@ -66,6 +71,8 @@ agent — оркестрация CLI-агентов как фоновых зад
 Примеры:
   agent start --task rozetka-ui --repo /d/work/vodovorot/server/erp_core \
     --worktree --verify "npm run typecheck && npm test" --prompt-file tz.md
+  agent start --task explore-api --repo . --interactive --prompt "изучи API..."
+  agent talk explore-api-20260727-120000 "да, ставь pdfkit"
   agent chat --task debug-login --repo . --model deepseek/deepseek-v4-chat
   agent list
   agent result rozetka-ui-20260726-140000
@@ -106,7 +113,7 @@ job_dir_of() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
-  local max_parallel="" force=0
+  local max_parallel="" force=0 interactive=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -120,6 +127,7 @@ cmd_start() {
       --branch)      branch="${2:-}"; shift 2 ;;
       --base)        base="${2:-}"; shift 2 ;;
       --worktree)    make_worktree=1; shift ;;
+      --interactive) interactive=1; shift ;;
       --max-parallel) max_parallel="${2:-}"; shift 2 ;;
       --force)        force=1; shift ;;
       -h|--help)     usage; return 0 ;;
@@ -135,6 +143,9 @@ cmd_start() {
   [[ -n "$repo" ]] || die "--repo обязателен"
   [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
   [[ "$task" =~ ^[A-Za-z0-9._-]+$ ]] || die "--task: допустимы буквы, цифры, . _ -"
+  if (( interactive )) && (( runner_explicit )) && [[ "$runner" != "opencode" ]]; then
+    die "--interactive пока поддерживается только для runner=opencode (задан: $runner)"
+  fi
 
   # --- ТЗ: файл > строка > stdin ---
   local prompt=""
@@ -190,7 +201,17 @@ cmd_start() {
     "branch=$branch" \
     "model=$model" \
     "verifyCmd=$verify" \
+    "interactive=$([[ $interactive -eq 1 ]] && echo true || echo false)" \
     || die "не удалось создать job.json"
+
+  if (( interactive )); then
+    local actual_runner; actual_runner="$(agent_js get "$job_dir" runner)"
+    if [[ "$actual_runner" != "opencode" ]]; then
+      rm -rf "$job_dir"
+      (( make_worktree )) && git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1
+      die "--interactive пока поддерживается только для runner=opencode (по --model определился: $actual_runner)"
+    fi
+  fi
 
   local running_count max_parallel_limit
   running_count="$(agent_js running-count "$JOBS_DIR")"
@@ -205,6 +226,9 @@ cmd_start() {
   echo "$job_id"
   echo "  рабочая директория: $cwd"
   [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
+  if (( interactive )); then
+    echo "  интерактивная сессия: agent talk $job_id \"<текст>\""
+  fi
   echo "  следить: agent status $job_id  ·  ждать (в фоне!): agent wait $job_id"
   return 0
 }
@@ -346,6 +370,29 @@ cmd_send() {
   return 0
 }
 
+# Реплика в живую интерактивную сессию (agent start --interactive).
+# В отличие от cmd_send — не создаёт новую задачу, а пишет прямо в stdin
+# уже работающего процесса через FIFO ($job_dir/in.fifo, см. run-job.sh).
+# Не блокирует и не ждёт ответа — ответ читается через agent tail/status.
+cmd_talk() {
+  local id="${1:-}"; shift || true
+  local msg="$*"
+  local d; d="$(job_dir_of "$id")" || exit 1
+  [[ -n "$msg" ]] || die "нужен текст реплики"
+
+  [[ "$(agent_js get "$d" interactive)" == "true" ]] \
+    || die "задача $id не в интерактивном режиме (нужен agent start --interactive)"
+  [[ "$(agent_js get "$d" status)" == "running" ]] \
+    || die "задача $id не выполняется сейчас (status=$(agent_js get "$d" status)) — используй agent send для новой реплики"
+
+  local fifo="$d/in.fifo"
+  [[ -p "$fifo" ]] || die "входной канал недоступен (interactiveDegraded=$(agent_js get "$d" interactiveDegraded)) — сессия работает как обычная задача, используй agent send"
+
+  printf '%s\n' "$msg" > "$fifo" || die "не удалось записать в $fifo"
+  printf '\n>>> [%s]: %s\n' "$(date -u +%H:%M:%S)" "$msg" >> "$d/talk.log"
+  echo "отправлено в $id — ответ смотри через: agent tail $id"
+}
+
 # Блокирующее ожидание терминального статуса. Смысл — в том, ЧТО его
 # запускают: оркестратор (Claude Code) через свой фоновый Bash, и тогда
 # харнесс присылает уведомление, когда wait выйдет. Сам agent start этого
@@ -473,6 +520,7 @@ main() {
     start)   cmd_start "$@" ;;
     chat)    cmd_chat "$@" ;;
     send)    cmd_send "$@" ;;
+    talk)    cmd_talk "$@" ;;
     kill)    cmd_kill "$@" ;;
     clean)   cmd_clean "$@" ;;
     list)    agent_js list "$JOBS_DIR" ;;

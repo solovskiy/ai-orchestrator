@@ -50,11 +50,31 @@ jset status=running "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # --- собственно агент: stdout -> JSONL, stderr отдельно ---
 cd "$CWD" || true
-"${ARGS[@]}" > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &
-CHILD=$!
-jset "pid=$CHILD"
-wait "$CHILD"
-EXIT=$?
+
+INTERACTIVE="$(jget interactive)"
+if [[ "$INTERACTIVE" == "true" ]] && mkfifo "$JOB_DIR/in.fifo" 2>/dev/null; then
+  # Открываем FIFO на чтение+запись одним и тем же дескриптором (9).
+  # Только так open() на именованном канале не блокируется в ожидании
+  # второго конца — а сам дескриптор потом всё время держит канал
+  # «живым»: без него после первого же `agent talk` дочерний процесс
+  # получил бы EOF на stdin и завершился.
+  exec 9<>"$JOB_DIR/in.fifo"
+  "${ARGS[@]}" <&9 > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &
+  CHILD=$!
+  jset "pid=$CHILD"
+  wait "$CHILD"
+  EXIT=$?
+  exec 9>&- 2>/dev/null || true
+else
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    jset interactiveDegraded=true
+  fi
+  "${ARGS[@]}" > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &
+  CHILD=$!
+  jset "pid=$CHILD"
+  wait "$CHILD"
+  EXIT=$?
+fi
 
 # --- разобрать поток, записать итог, извлечь result.md ---
 "$NODE" "$AGENT_JS" finalize "$JOB_DIR_WIN" "$EXIT" >/dev/null 2>&1
