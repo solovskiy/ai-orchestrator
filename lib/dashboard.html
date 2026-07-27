@@ -354,7 +354,7 @@ async function loadSettings() {
   h += '</div>';
   h += '<label title="Краткое описание — когда использовать этого агента. Показывается в UI opencode.">Description ⓘ</label><input type="text" id="ae-desc" title="Одно предложение: что делает агент и когда его применять. Видно в opencode agent list.">';
   h += '<label title="Какие инструменты разрешены агенту. Остальные — deny.">Permissions ⓘ</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep" title="Через запятую: bash, read, edit, glob, grep, webfetch, websearch, task, skill, lsp. Не перечисленные = deny.">';
-  h += '<label title="Системный промпт — определяет поведение агента. Пиши правила и ограничения.">System Prompt ⓘ</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px" title="Основные инструкции для агента. Пиши в стиле: 'You are a... Always: 1... 2...' Чем конкретнее — тем лучше."></textarea>';
+  h += `<label title="Системный промпт — определяет поведение агента. Пиши правила и ограничения.">System Prompt ⓘ</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px" title="Основные инструкции для агента. Чем конкретнее — тем лучше."></textarea>`;
   h += '<div style="margin-top:8px;display:flex;gap:8px">';
   h += '<button class="primary" onclick="saveAgent()">💾 Сохранить</button>';
   h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer">📥 Export .md</button>';
