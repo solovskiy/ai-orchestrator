@@ -42,12 +42,14 @@ tr { cursor: pointer; }
 .status.running { background: #dbeafe; color: #1e40af; }
 .status.killed { background: #fef3c7; color: #92400e; }
 .status.pending { background: #f3f4f6; color: #6b7280; }
+.status.warning { background: #fef3c7; color: #92400e; }
 @media (prefers-color-scheme: dark) {
   .status.completed { background: #14532d; color: #86efac; }
   .status.failed { background: #7f1d1d; color: #fca5a5; }
   .status.running { background: #1e3a5f; color: #93c5fd; }
   .status.killed { background: #713f12; color: #fde68a; }
   .status.pending { background: #374151; color: #d1d5db; }
+  .status.warning { background: #713f12; color: #fde68a; }
 }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
 .card h3 { font-size: 14px; margin-bottom: 8px; }
@@ -137,7 +139,20 @@ async function post(url, body) {
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function statusBadge(s) { return '<span class="status ' + esc(s) + '">' + esc(s) + '</span>'; }
+function statusBadge(s, healthWarnings) {
+  let cls = 'status ' + esc(s);
+  let title = '';
+  if (healthWarnings && healthWarnings.length > 0) {
+    cls += ' warning';
+    const msgs = healthWarnings.map(function(w) {
+      if (w === 'no_changes') return 'агент не внёс изменений, хотя проверка прошла';
+      if (w === 'not_autocommitted') return 'остались незакоммиченные изменения, авто-коммит обёртки не сработал';
+      return w;
+    });
+    title = ' title="⚠ ' + esc(msgs.join('; ')) + '"';
+  }
+  return '<span class="' + cls + '"' + title + '>' + esc(s) + '</span>';
+}
 
 function fmtNum(n) {
   if (n == null) return '---';
@@ -208,7 +223,7 @@ function renderJobs() {
     h += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
     h += '<td style="font-family:monospace;font-size:11px">' + esc(shortId) + '</td>';
     h += '<td>' + esc(j.task || '') + '</td>';
-    h += '<td>' + statusBadge(j.status) + '</td>';
+    h += '<td>' + statusBadge(j.status, j.healthWarnings) + '</td>';
     h += '<td>' + esc(j.model) + '</td>';
     h += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
     h += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
@@ -245,6 +260,15 @@ async function openDetail(id) {
   for (const [k, v] of fields) {
     if (v == null || v === '') continue;
     h += '<div class="field"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>';
+  }
+
+  if (d.healthWarnings && d.healthWarnings.length > 0) {
+    var _warntxt = d.healthWarnings.map(function(w) {
+      if (w === 'no_changes') return '⚠ агент не внёс изменений, хотя проверка прошла';
+      if (w === 'not_autocommitted') return '⚠ остались незакоммиченные изменения, авто-коммит обёртки не сработал';
+      return '⚠ ' + w;
+    }).join('\n');
+    h += '<div class="field"><div class="k">Предупреждения</div><div class="v" style="color:var(--yellow);white-space:pre-wrap">' + esc(_warntxt) + '</div></div>';
   }
 
   if (d.resultMd) {
