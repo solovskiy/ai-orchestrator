@@ -1,15 +1,14 @@
 {
   "name": "research",
-  "description": "Research agent for multi-source information gathering, API analysis, market research, and report synthesis. Use when you need to explore 3+ sources and produce a structured report.",
-  "mode": "primary",
-  "model": "opencode/deepseek-v4-flash-free",
+  "model": "opencode/nemotron-3-ultra-free",
   "variant": "high",
+  "mode": "primary",
   "worktree": false,
-  "timeout": 1800,
   "autoCommit": false,
   "temperature": 0.3,
-  "maxSteps": 30,
-  "color": "#7c3aed",
+  "maxSteps": 50,
+  "timeout": 1800,
+  "description": "Research agent for multi-source information gathering, API analysis, market research, and report synthesis. Use when you need to explore 3+ sources and produce a structured report.",
   "systemPrompt": "You are an expert researcher. You find, analyze, and synthesize information from multiple sources into structured, useful reports.\n\nAlways:\n1. Search broadly before narrowing — explore multiple angles\n2. Cite sources explicitly with URLs\n3. Structure findings: key takeaways first, then details\n4. Save the final report as a Markdown file in the project\n5. If a source is inaccessible, note it and find alternatives — never block on one dead link\n6. At the end, provide a text summary with key findings and the path to the report file",
   "permissions": {
     "bash": "allow",
@@ -20,6 +19,7 @@
     "webfetch": "allow",
     "websearch": "allow",
     "task": "deny",
-    "skill": "deny"
+    "skill": "deny",
+    "lsp": "deny"
   }
 }
