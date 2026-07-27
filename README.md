@@ -89,35 +89,20 @@ capability вместо имени модели. Запускать целико
 
 Полный список опций — `agent --help`.
 
-## Capability
+## Capability / Agent
 
-`--capability <name>` (у `start` и `delegate`) подставляет `model`/`worktree`
-из `capabilities/<name>/capability.json` — вызывающий думает задачей
-(«research», «coding»), а не именем модели или раннером:
+`--agent <name>` (или `--capability` для обратной совместимости) у `start`
+и `delegate` подставляет model/worktree/variant/permissions/systemPrompt
+из `agents/<name>.json` — канонического JSON-формата `.ai`.
 
-| Capability | Файл | model | worktree | variant |
-|---|---|---|---|---|
-| `research` | `capabilities/research/capability.json` | `opencode/deepseek-v4-flash-free` | нет | `high` |
-| `coding` | `capabilities/coding/capability.json` | `opencode/deepseek-v4-flash-free` | да | `medium` |
+| Агент | Файл | model | worktree | variant | permissions |
+|---|---|---|---|---|---|
+| `coding` | `agents/coding.json` | deepseek-v4-flash-free | да | medium | bash,read,edit,glob,grep |
+| `research` | `agents/research.json` | deepseek-v4-flash-free | нет | high | +webfetch,websearch |
 
-Обе временно зашиты на бесплатную модель (см. `docs/workflow.md` — платный
-DeepSeek приостановлен). Явные `--model`/`--worktree`/`--variant` всегда
-побеждают capability — переопределить для конкретного вызова можно, не
-трогая файл:
-
-```bash
-.ai/bin/agent delegate --task deep-research --repo . \
-  --capability research --model deepseek/deepseek-v4-pro --variant max --prompt-file tz.md
-```
-
-`--variant` передаётся в opencode как `--variant <level>`. Допустимые
-значения: `minimal`, `low`, `medium`, `high`, `max`. Рекомендации на основе
-effortmining benchmark (64.7% экономии токенов при том же качестве): coding →
-medium, research → high.
-
-Добавить новую capability — создать `capabilities/<name>/capability.json`
-с полями `model` (обязательно), `worktree` (bool, по умолчанию `false`),
-`variant` (string, опционально).
+`agent init` генерирует из JSON opencode-совместимые `.md` файлы в
+`~/.config/opencode/agents/` — после этого `opencode run --agent coding`
+работает в любом проекте без копирования.
 
 ## Мультимодельность
 
@@ -167,7 +152,10 @@ medium, research → high.
   lib/runners/*.js       адаптеры исполнителей (opencode, claude, gemini, codex)
   lib/dashboard.js       веб-дашборд (HTTP API + сервер, localhost)
   lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
-  capabilities/*/capability.json   дефолты model/worktree/variant по задаче
+  agents/*.json          определения агентов (канонический JSON: model, variant,
+                          worktree, permissions, systemPrompt)
+  capabilities/*/        (устарело, миграция в agents/)
+  lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
   hooks/                 PreToolUse-хуки: напоминание о делегировании
   scripts/               разовые обслуживающие скрипты
   test/                  юнит-тесты (diagnosis, diffStatusLines)

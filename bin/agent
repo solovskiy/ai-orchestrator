@@ -139,6 +139,7 @@ cmd_start() {
       --prompt-file) prompt_file="${2:-}"; shift 2 ;;
       --prompt)      prompt_text="${2:-}"; shift 2 ;;
       --capability)  capability="${2:-}"; shift 2 ;;
+      --agent)       capability="${2:-}"; shift 2 ;;  # новое имя, capability — обратная совместимость
       --model)       model="${2:-}"; shift 2 ;;
       --verify)      verify="${2:-}"; shift 2 ;;
       --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
@@ -153,16 +154,29 @@ cmd_start() {
     esac
   done
 
-  # --capability <name>: подставляет дефолты (model, worktree) из
-  # capabilities/<name>/capability.json — явно переданные --model/--worktree
-  # приоритетнее и capability их не перезаписывает.
+  # --agent/--capability <name>: читает agents/<name>.json (v3),
+  # при отсутствии — fallback на capabilities/<name>/capability.json (v2).
+  # Явные --model/--worktree/--variant приоритетнее.
   if [[ -n "$capability" ]]; then
+    local agent_json="$AI_HOME/agents/$capability.json"
     local cap_file="$AI_HOME/capabilities/$capability/capability.json"
-    [[ -f "$cap_file" ]] || die "неизвестная capability: $capability (нет $cap_file)"
-    local cap_model cap_worktree cap_variant
-    { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
-      < <(agent_js capability "$capability") \
-      || die "capability: не удалось прочитать $capability"
+
+    local cap_model="" cap_worktree="" cap_variant=""
+
+    if [[ -f "$agent_json" ]]; then
+      # v3: agents/<name>.json (канонический формат)
+      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
+        < <(agent_js agent-read "$agent_json") \
+        || die "agent: не удалось прочитать $agent_json"
+    elif [[ -f "$cap_file" ]]; then
+      # v2: capabilities/<name>/capability.json (обратная совместимость)
+      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
+        < <(agent_js capability "$capability") \
+        || die "capability: не удалось прочитать $capability"
+    else
+      die "неизвестный агент/capability: $capability (нет ни $agent_json, ни $cap_file)"
+    fi
+
     [[ -n "$model" ]] || model="$cap_model"
     [[ -n "$variant" ]] || variant="$cap_variant"
     if [[ "$cap_worktree" == "1" && "$make_worktree" == "0" ]]; then
@@ -226,6 +240,16 @@ cmd_start() {
     cwd="$wt"
   fi
 
+  # Деплой агента в целевую директорию (opencode найдёт .opencode/agents/<name>.md)
+  local agent_name=""
+  if [[ -n "$capability" ]]; then
+    agent_name="$capability"
+    local deployer; deployer="$(winpath "$LIB/deploy-agent.js")"
+    if [[ -f "$deployer" ]]; then
+      $NODE "$deployer" "$(winpath "$AI_HOME/agents")" "$agent_name" --target "$(winpath "$cwd")" 2>/dev/null || true
+    fi
+  fi
+
   # runner передаём, только если явно указан (иначе agent.js авто-определит)
   local runner_pair=""
   if (( runner_explicit )); then
@@ -242,6 +266,7 @@ cmd_start() {
     "branch=$branch" \
     "model=$model" \
     "variant=$variant" \
+    "agent=$agent_name" \
     "verifyCmd=$verify" \
     || die "не удалось создать job.json"
 
@@ -595,13 +620,27 @@ cmd_init() {
   if [[ -e "$dst" ]]; then
     echo "skill уже установлен: $dst"
     echo "  для переустановки: rm -rf \"$dst\" && agent init"
-    return 0
+  else
+    mkdir -p "$dst" || die "не удалось создать $dst"
+    cp "$src/SKILL.md" "$dst/SKILL.md" || die "не удалось скопировать SKILL.md"
+    echo "skill agent-bridge установлен глобально: $dst"
   fi
 
-  mkdir -p "$dst" || die "не удалось создать $dst"
-  cp "$src/SKILL.md" "$dst/SKILL.md" || die "не удалось скопировать SKILL.md"
+  echo ""
 
-  echo "skill agent-bridge установлен глобально: $dst"
+  # Глобальная установка агентов в ~/.config/opencode/agents/
+  local deployer; deployer="$(winpath "$LIB/deploy-agent.js")"
+  if [[ -f "$deployer" ]]; then
+    local agents_dir; agents_dir="$(winpath "$AI_HOME/agents")"
+    local count=0
+    for f in "$AI_HOME/agents"/*.json; do
+      [[ -f "$f" ]] || continue
+      local name; name="$(basename "$f" .json)"
+      $NODE "$deployer" "$agents_dir" "$name" --target --global 2>/dev/null && count=$((count + 1))
+    done
+    echo "агентов установлено глобально: $count (→ ~/.config/opencode/agents/)"
+  fi
+
   echo ""
   echo "Теперь ЛЮБОЙ проект может вызывать делегирование:"
   echo "  /agent-bridge"
