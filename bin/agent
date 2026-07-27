@@ -53,6 +53,7 @@ agent — оркестрация CLI-агентов как фоновых зад
                                                        в ~/.claude/skills/agent-bridge/ — после этого
                                                        ЛЮБОЙ проект может вызывать делегирование)
   agent dashboard [--port N] [--open]                  локальный веб-дашборд (localhost:9191)
+  agent cron-daily                                      ежедневная очистка (worktree-gc + clean)
 
 Опции start:
   --task <slug>          имя задачи (обязательно), участвует в jobId
@@ -609,6 +610,36 @@ cmd_init() {
   echo "Документация: .ai/README.md"
 }
 
+cmd_cron_daily() {
+  echo "=== cron-daily $(date +%Y-%m-%d) ==="
+
+  # Собираем репозитории из всех job.json
+  local repos=()
+  if [[ -d "$JOBS_DIR" ]]; then
+    for f in "$JOBS_DIR"/*/job.json; do
+      local r; r="$(agent_js get "$(dirname "$f")" "repo")" || continue
+      [[ -n "$r" && -d "$r" ]] || continue
+      # дедупликация
+      local seen=0
+      for existing in "${repos[@]}"; do
+        [[ "$existing" == "$r" ]] && { seen=1; break; }
+      done
+      (( seen )) || repos+=("$r")
+    done
+  fi
+
+  echo "найдено репозиториев: ${#repos[@]}"
+  for repo in "${repos[@]}"; do
+    echo "  worktree-gc --repo $repo --apply"
+    cmd_worktree_gc --repo "$repo" --apply 2>&1
+  done
+
+  echo ""
+  echo "  clean --days 7"
+  cmd_clean --days 7
+  echo "=== готово ==="
+}
+
 cmd_dashboard() {
   local port="9191" open_flag=""
 
@@ -654,6 +685,7 @@ main() {
     capability) agent_js capability "${1:-}" ;;
     init)    cmd_init ;;
     dashboard) cmd_dashboard "$@" ;;
+    cron-daily) cmd_cron_daily ;;
     heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
