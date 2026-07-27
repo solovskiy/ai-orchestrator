@@ -637,7 +637,16 @@ function exportAgent(name) {
 
 // init
 loadJobs();
-setInterval(() => { (routes[$('nav button.active')?.dataset?.tab] || loadJobs)(); }, 5000);
+// не перезагружать settings, пока открыт редактор агента — иначе loadSettings
+// сносит DOM и editor пропадает
+setInterval(() => {
+  const tab = $('nav button.active')?.dataset?.tab;
+  if (tab === 'settings') {
+    const ed = $('#agent-editor');
+    if (ed && !['', 'none'].includes(ed.style.display)) return;
+  }
+  (routes[tab] || loadJobs)();
+}, 5000);
 </script>
 </body>
 </html>
