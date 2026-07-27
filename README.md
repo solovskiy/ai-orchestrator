@@ -113,19 +113,24 @@ capability — переопределить для конкретного выз
 Ниже уровня capability — модели по-прежнему определяют исполнителя
 автоматически через `--model`:
 
-| Префикс модели | Runner |
-|---|---|
-| `opencode/*` | opencode |
-| `deepseek/*` | opencode |
-| `openai/*` | opencode |
-| `anthropic/*` | opencode |
-| `claude/*` | claude (Claude Code CLI) |
-| `gemini/*` | gemini (Gemini CLI) |
-| `codex/*` | codex (Codex CLI) |
+| Префикс модели | Runner | Статус |
+|---|---|---|
+| `opencode/*` | opencode | **production** — основной, battle-tested |
+| `deepseek/*` | opencode | **production** |
+| `openai/*` | opencode | **production** |
+| `anthropic/*` | opencode | **production** |
+| `claude/*` | claude | **experimental** — не тестирован, cost tracking не реализован |
+| `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
+| `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
 
 Дефолт, если ни `--model`, ни `--capability` не заданы —
 `opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, без логина). Можно
 задать и раннер явно: `--runner opencode --model claude/sonnet-4`.
+
+Раннеры, кроме opencode — экспериментальные заглушки. Они корректно
+зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
+использованию**: адаптеры claude/gemini не тестированы на реальных задачах,
+а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
 
 ## Память
 

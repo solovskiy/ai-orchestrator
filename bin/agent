@@ -48,6 +48,9 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent recall [<pattern>]                              найти факты (по умолч. всё)
   agent forget <key>                                    забыть факт
   agent learn <jobId>                                   извлечь знание из результата задачи
+  agent init                                           глобальная установка skill (копирует SKILL.md
+                                                       в ~/.claude/skills/agent-bridge/ — после этого
+                                                       ЛЮБОЙ проект может вызывать делегирование)
 
 Опции start:
   --task <slug>          имя задачи (обязательно), участвует в jobId
@@ -575,6 +578,30 @@ cmd_learn() {
   agent_js learn "$d"
 }
 
+cmd_init() {
+  local src="$AI_HOME/.claude/skills/agent-bridge"
+  local dst="${HOME}/.claude/skills/agent-bridge"
+
+  [[ -d "$src" ]] || die "исходный skill не найден: $src (AI_HOME=$AI_HOME)"
+
+  if [[ -e "$dst" ]]; then
+    echo "skill уже установлен: $dst"
+    echo "  для переустановки: rm -rf \"$dst\" && agent init"
+    return 0
+  fi
+
+  mkdir -p "$dst" || die "не удалось создать $dst"
+  cp "$src/SKILL.md" "$dst/SKILL.md" || die "не удалось скопировать SKILL.md"
+
+  echo "skill agent-bridge установлен глобально: $dst"
+  echo ""
+  echo "Теперь ЛЮБОЙ проект может вызывать делегирование:"
+  echo "  /agent-bridge"
+  echo "  или просто скажи Claude «заделегируй это исследование через .ai»"
+  echo ""
+  echo "Документация: .ai/README.md"
+}
+
 main() {
   require_node
   mkdir -p "$JOBS_DIR"
@@ -598,6 +625,7 @@ main() {
     recall)  cmd_recall "$@" ;;
     forget)  cmd_forget "$@" ;;
     learn)   cmd_learn "$@" ;;
+    init)    cmd_init ;;
     heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;

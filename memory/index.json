@@ -1,1 +1,43 @@
-{}
+{
+  "model:default": {
+    "value": "opencode/deepseek-v4-flash-free",
+    "tags": [
+      "model",
+      "default"
+    ],
+    "source": null,
+    "created": "2026-07-27T17:19:58.500Z",
+    "updated": "2026-07-27T17:19:58.500Z"
+  },
+  "capability:coding:effort": {
+    "value": "medium",
+    "tags": [
+      "capability",
+      "coding",
+      "effort"
+    ],
+    "source": null,
+    "created": "2026-07-27T17:19:58.763Z",
+    "updated": "2026-07-27T17:19:58.763Z"
+  },
+  "capability:research:effort": {
+    "value": "high",
+    "tags": [
+      "capability",
+      "research",
+      "effort"
+    ],
+    "source": null,
+    "created": "2026-07-27T17:19:59.011Z",
+    "updated": "2026-07-27T17:19:59.011Z"
+  },
+  "setup:verified": {
+    "value": "2026-07-27",
+    "tags": [
+      "setup"
+    ],
+    "source": null,
+    "created": "2026-07-27T17:21:06.062Z",
+    "updated": "2026-07-27T17:21:06.062Z"
+  }
+}
