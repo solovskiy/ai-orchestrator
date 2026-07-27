@@ -13,9 +13,10 @@ set -uo pipefail
 JOB_DIR="${1:?run-job.sh: не передан путь к задаче}"
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# -a (absolute) обязателен — см. пояснение в bin/agent::winpath().
 winpath() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; return; fi
-  if command -v wslpath >/dev/null 2>&1; then wslpath -m "$1"; return; fi
+  if command -v cygpath >/dev/null 2>&1; then cygpath -am "$1"; return; fi
+  if command -v wslpath >/dev/null 2>&1; then wslpath -am "$1"; return; fi
   echo "$1"
 }
 

@@ -9,9 +9,13 @@ set -uo pipefail
 die() { echo "agent: $*" >&2; exit 1; }
 
 # Приводит путь к виду D:/foo/bar — понятен и Git Bash, и Windows-бинарям.
+# -a (absolute) ОБЯЗАТЕЛЕН: без него cygpath/wslpath -m молча возвращает
+# относительный путь как есть (не резолвит против pwd) — opencode.exe
+# получает такой путь в --dir и падает "Failed to change directory"
+# (баг найден и разобран 2026-07-27, job vytrata-palyva-...-6513).
 winpath() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; return; fi
-  if command -v wslpath >/dev/null 2>&1; then wslpath -m "$1"; return; fi
+  if command -v cygpath >/dev/null 2>&1; then cygpath -am "$1"; return; fi
+  if command -v wslpath >/dev/null 2>&1; then wslpath -am "$1"; return; fi
   echo "$1"
 }
 
