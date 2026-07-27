@@ -63,6 +63,38 @@ EXIT=$?
 # --- разобрать поток, записать итог, извлечь result.md ---
 "$NODE" "$AGENT_JS" finalize "$JOB_DIR_WIN" "$EXIT" >/dev/null 2>&1
 
+# --- авто-коммит незакоммиченных изменений в worktree-задачах ---
+# Модель-исполнитель не всегда сама коммитит свою работу (замечено
+# 2026-07-27 на задаче research-archive-cleanup: файлы перенесены и
+# отредактированы, но `git commit` агент не сделал — verify видел
+# только uncommitted diff, а последующий `git merge` показывал "Already
+# up to date", пока коммит не сделали вручную). Раз worktree и так
+# существует именно для review+merge оркестратором — надёжнее
+# коммитить туда детерминированно здесь, а не полагаться на то, что
+# модель не забудет. Для НЕ-worktree задач (обычно ресёрч прямо в
+# основном репо) это осознанно не делается — коммит в основную ветку
+# остаётся решением оркестратора, не автоматикой.
+IS_WORKTREE="$(jget worktree)"
+if [[ "$IS_WORKTREE" == "1" && -n "$(cd "$CWD" && git status --porcelain 2>/dev/null)" ]]; then
+  MSG_FILE="$JOB_DIR/auto-commit-message.txt"
+  {
+    echo "agent: $(jget task) (авто-коміт наприкінці задачі)"
+    echo
+    if [[ -f "$JOB_DIR/result.md" ]]; then
+      head -c 2000 "$JOB_DIR/result.md"
+      echo
+    fi
+    echo
+    echo "Job: $(jget id)"
+    echo "Модель сама не закомітила зміни — закомічено обгорткою run-job.sh."
+  } > "$MSG_FILE"
+  if ( cd "$CWD" && git add -A && git commit -F "$MSG_FILE" ) >/dev/null 2>&1; then
+    jset "autoCommitted=true"
+  else
+    jset "autoCommitted=false"
+  fi
+fi
+
 # --- проверка: гоняется здесь, чтобы её вывод не попадал в контекст чата ---
 VERIFY="$(jget verifyCmd)"
 if [[ -n "$VERIFY" && "$VERIFY" != "null" ]]; then
