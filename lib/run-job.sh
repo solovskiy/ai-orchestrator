@@ -49,6 +49,9 @@ fi
 
 jset status=running "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# --- снепшот git-status до старта (для фильтрации pre-existing файлов) ---
+( cd "$CWD" && git status --porcelain 2>/dev/null ) > "$JOB_DIR/pre-status.txt" || true
+
 # --- собственно агент: stdout -> JSONL, stderr отдельно ---
 cd "$CWD" || true
 "${ARGS[@]}" > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &

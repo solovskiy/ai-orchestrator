@@ -1,0 +1,6 @@
+{"type":"step_start","part":{}}
+{"type":"text","part":{"text":"I will analyze the tax rates"}}
+{"type":"tool_use","part":{"tool":"todowrite","state":{"status":"success"}}}
+{"type":"step_finish","part":{"reason":"unknown","cost":0,"tokens":{"input":0,"output":0,"total":0}}}
+{"type":"step_start","part":{}}
+{"type":"step_finish","part":{"reason":"unknown","cost":0,"tokens":{"input":0,"output":0,"total":0}}}
