@@ -15,17 +15,17 @@
 внутри вызывает `start`+`wait`+(при необходимости) `heal` и запускает
 `opencode run` (тот же CLI, та же модель по умолчанию). Разницы между
 «агентом для ресёрча» и «агентом для кода» на уровне инструмента нет —
-разница только в `--capability`, промпте и флагах:
+разница только в `--agent`, промпте и флагах:
 
 | | Исследование | Код |
 |---|---|---|
-| `--capability` | `research` | `coding` |
-| `--worktree` | нет (не входит в capability `research`) | да (входит в capability `coding`) |
+| `--agent` | `research` | `coding` |
+| `--worktree` | нет (не входит в агент `research`) | да (входит в агент `coding`) |
 | `--verify` | нет | да |
 | В промпте | «изучи X, сохрани отчёт в `<файл>.md`» | «реализуй Y по образцу Z» |
 | Итог | `delegate` сам печатает итог → `.md`-отчёт | `git diff --stat` в worktree → ревью → мердж |
 
-`--capability` (см. `README.md`, раздел «Capability») подставляет
+`--agent` (или `--capability` для обратной совместимости, см. `README.md`, раздел «Capability / Agent») подставляет
 модель/worktree по умолчанию — не нужно помнить конкретное имя модели.
 Явный `--model` всегда переопределяет то, что задано capability.
 
@@ -54,10 +54,10 @@
 источников в связный отчёт важнее скорости/цены, дефолтная flash-модель
 слабее в синтезе. Пример прогона на `-pro`: 3 минуты, $0.07, отчёт на 379
 строк с источниками (`research/claude-md-and-agent-docs-best-practices.md`).
-Пока платный API приостановлен (см. выше), `capabilities/research/capability.json`
+Пока платный API приостановлен (см. выше), `agents/research.json`
 временно зашит на бесплатную модель — переопределить для одного вызова:
-`agent delegate --capability research --model deepseek/deepseek-v4-pro ...`.
-Вернуть `-pro` в сам `capability.json` как дефолт — после пополнения баланса.
+`agent delegate --agent research --model deepseek/deepseek-v4-pro ...`.
+Вернуть `-pro` в сам `agents/research.json` как дефолт — после пополнения баланса.
 
 ## Когда делегировать код
 
@@ -66,9 +66,9 @@
 - НЕ делегировать: архитектурные решения, пересечение границ модулей,
   задачи, требующие знания истории текущей сессии, правку в 1–2 файлах
   с очевидным фиксом (оверхед делегирования больше пользы).
-- Модель — дефолт из `capabilities/coding/capability.json`:
+- Модель — дефолт из `agents/coding.json`:
   `opencode/deepseek-v4-flash-free` ($0, для механической генерации
-  хватает; достаточно `--capability coding`, `--model` не нужен). Если
+  хватает; достаточно `--agent coding`, `--model` не нужен). Если
   free упирается в rate-limit — переопределить `--model
   deepseek/deepseek-v4-flash` (платный, центы, стабильнее). `-pro` — если
   цена ошибки высокая (деньги/Decimal, точное повторение сложного
@@ -90,7 +90,7 @@
 
 **ALWAYS**
 - Одна задача = один `--task <slug>` = один worktree для кодовых задач
-  (`--capability coding` включает `--worktree` сам, руками задавать не
+  (`--agent coding` включает `--worktree` сам, руками задавать не
   нужно).
 - Тесты — только через `--verify`, не отдельным вызовом: вывод оседает в
   `verify.log`, в контекст сессии попадает только вердикт.
@@ -126,7 +126,7 @@
 
 ```bash
 .ai/bin/agent delegate --task <slug> --repo <path> \
-  --capability research --prompt-file <ТЗ.md>
+  --agent research --prompt-file <ТЗ.md>
 ```
 
 `delegate` внутри сам делает start → wait → (если нужно) heal → печатает
@@ -140,7 +140,7 @@
 
 ```bash
 # 1) старт (обычный Bash-вызов, возвращает jobId сразу)
-.ai/bin/agent start --task <slug> --repo <path> --capability coding --prompt-file <ТЗ.md>
+.ai/bin/agent start --task <slug> --repo <path> --agent coding --prompt-file <ТЗ.md>
 # 2) ожидание — ОТДЕЛЬНЫМ Bash-вызовом с run_in_background: true
 .ai/bin/agent wait <jobId1> <jobId2> ...
 ```
@@ -172,8 +172,8 @@
 
 ## Модели: где что
 
-Обычно модель выбирать не нужно — используй `--capability research` или
-`--capability coding` (см. `README.md`, раздел «Capability»), она уже
+Обычно модель выбирать не нужно — используй `--agent research` или
+`--agent coding` (см. `README.md`, раздел «Capability / Agent»), она уже
 несёт в себе и модель, и `worktree`. Явный `--model` нужен только для
 переопределения (см. примеры ресёрча и кода выше).
 
@@ -181,7 +181,7 @@
 Кратко: `opencode/*` и `deepseek/*` и `openai/*` и `anthropic/*` → opencode; `claude/*` →
 Claude Code CLI; `gemini/*` → Gemini CLI.
 
-Дефолт (если ни `--model`, ни `--capability` не заданы) —
+Дефолт (если ни `--model`, ни `--agent` не заданы) —
 `opencode/deepseek-v4-flash-free` ($0, OpenCode Zen, без логина). Платные
 варианты — только по явному `--model`: `deepseek/deepseek-v4-flash`
 (стабильнее free), `deepseek/deepseek-v4-pro` (ресёрч). Проверить

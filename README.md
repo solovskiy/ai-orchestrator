@@ -27,16 +27,16 @@ capability вместо имени модели. Запускать целико
 завершении.
 
 ```bash
-# --capability coding подставляет model/worktree из
-# capabilities/coding/capability.json — сейчас это бесплатная
-# opencode/deepseek-v4-flash-free (см. «Capability» ниже).
+# --agent coding подставляет model/worktree из
+# agents/coding.json — сейчас это бесплатная
+# opencode/deepseek-v4-flash-free (см. «Capability / Agent» ниже).
 # --verify должен сам поднять окружение, иначе первый прогон в свежем
 # worktree гарантированно упадёт на "Cannot find module" по всему
 # проекту, а не только по файлам агента (см. «Перед --verify» ниже).
 .ai/bin/agent delegate \
   --task rozetka-ui \
   --repo /d/work/vodovorot/server/erp_core \
-  --capability coding \
+  --agent coding \
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
 
@@ -85,7 +85,7 @@ capability вместо имени модели. Запускать целико
 сверх лимита.
 
 Также см. `agent dashboard` — локальный веб-интерфейс для просмотра задач,
-статистики и настройки capability (открывается в браузере на localhost:9191).
+статистики и настройки агентов (открывается в браузере на localhost:9191).
 
 Полный список опций — `agent --help`.
 
@@ -199,7 +199,7 @@ worktree без установки зависимостей **упадёт на 
 
 ## Авто-коммит в worktree
 
-Если задача запущена с worktree (`--capability coding` или `--worktree`),
+Если задача запущена с worktree (`--agent coding` или `--worktree`),
 обёртка `run-job.sh` в конце автоматически коммитит незакоммиченные
 изменения — на случай, если модель забыла сделать `git commit` сама.
 Сообщение коммита генерируется из `task`, `model` и первых строк
