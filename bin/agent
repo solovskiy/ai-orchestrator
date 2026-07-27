@@ -275,10 +275,20 @@ cmd_delegate() {
   # exitCode==0 не гарантирует реальный успех (см. cmdFinalize в agent.js),
   # поэтому нельзя полагаться на job.status здесь.
   if [[ "$no_heal" == "0" ]]; then
-    local heal_out heal_job_id
-    heal_out="$(agent_js heal "$d")"
+    local heal_out heal_job_id heal_rc=0
+    # agent_js heal имеет три исхода: (1) создал дочернюю задачу — код 0,
+    # первая строка stdout = её jobId; (2) чинить не нужно (outcome не
+    # подходит) — код 0, в stdout информационное сообщение, НЕ jobId;
+    # (3) не может починить (нет sessionId / уже healedAt / сессия занята
+    # другой задачей) — код 1, сообщение только в stderr, stdout пустой.
+    # Раньше пустой heal_job_id из случая (3) давал "$JOBS_DIR/" — каталог
+    # jobs/ сам по себе существует, это ложно трактовалось как успех и
+    # роняло весь `delegate` через cmd_wait "" → die. Различаем случаи и
+    # кодом возврата, и проверкой каталога — код 0 сам по себе не значит
+    # "получили jobId".
+    heal_out="$(agent_js heal "$d")" || heal_rc=$?
     heal_job_id="$(head -n1 <<<"$heal_out")"
-    if [[ -d "$JOBS_DIR/$heal_job_id" ]]; then
+    if [[ "$heal_rc" == "0" && -d "$JOBS_DIR/$heal_job_id" ]]; then
       echo ""
       echo "$heal_out"
       cmd_wait "$heal_job_id" --timeout "$timeout"
