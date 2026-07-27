@@ -84,6 +84,9 @@ capability вместо имени модели. Запускать целико
 (по умолч. 3) — лимит одновременно выполняющихся задач. `--force` запускает
 сверх лимита.
 
+Также см. `agent dashboard` — локальный веб-интерфейс для просмотра задач,
+статистики и настройки capability (открывается в браузере на localhost:9191).
+
 Полный список опций — `agent --help`.
 
 ## Capability
@@ -162,7 +165,9 @@ medium, research → high.
   lib/diagnosis.js       классификация провалов (outcome для heal)
   lib/models.json        маппинг префикса модели → runner
   lib/runners/*.js       адаптеры исполнителей (opencode, claude, gemini, codex)
-  capabilities/*/capability.json   дефолты model/worktree по задаче
+  lib/dashboard.js       веб-дашборд (HTTP API + сервер, localhost)
+  lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
+  capabilities/*/capability.json   дефолты model/worktree/variant по задаче
   hooks/                 PreToolUse-хуки: напоминание о делегировании
   scripts/               разовые обслуживающие скрипты
   test/                  юнит-тесты (diagnosis, diffStatusLines)

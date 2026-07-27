@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>.ai — дашборд</title>
+<style>
+:root {
+  --bg: #fff; --fg: #1a1a1a; --muted: #6b7280;
+  --border: #e5e7eb; --accent: #2563eb; --accent-bg: #eff6ff;
+  --red: #dc2626; --green: #16a34a; --yellow: #ca8a04;
+  --row-hover: #f9fafb; --card: #fff; --input-bg: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827; --fg: #f3f4f6; --muted: #9ca3af;
+    --border: #374151; --accent: #60a5fa; --accent-bg: #1e3a5f;
+    --red: #f87171; --green: #4ade80; --yellow: #facc15;
+    --row-hover: #1f2937; --card: #1f2937; --input-bg: #374151;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 16px; font-weight: 600; }
+nav { display: flex; gap: 4px; }
+nav button { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-size: 13px; }
+nav button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+main { padding: 16px 20px; max-width: 1400px; }
+.filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters select, .filters input { padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--input-bg); color: var(--fg); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--bg); }
+tr:hover td { background: var(--row-hover); }
+tr { cursor: pointer; }
+.status { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.status.completed { background: #dcfce7; color: #166534; }
+.status.failed { background: #fef2f2; color: #991b1b; }
+.status.running { background: #dbeafe; color: #1e40af; }
+.status.killed { background: #fef3c7; color: #92400e; }
+.status.pending { background: #f3f4f6; color: #6b7280; }
+@media (prefers-color-scheme: dark) {
+  .status.completed { background: #14532d; color: #86efac; }
+  .status.failed { background: #7f1d1d; color: #fca5a5; }
+  .status.running { background: #1e3a5f; color: #93c5fd; }
+  .status.killed { background: #713f12; color: #fde68a; }
+  .status.pending { background: #374151; color: #d1d5db; }
+}
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.card h3 { font-size: 14px; margin-bottom: 8px; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: center; }
+.stat .val { font-size: 28px; font-weight: 700; }
+.stat .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.chart { display: flex; align-items: flex-end; gap: 2px; height: 80px; margin: 8px 0; }
+.chart div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; }
+.detail-panel { position: fixed; top: 0; right: 0; width: 55%; height: 100vh; background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; padding: 20px; z-index: 10; box-shadow: -4px 0 12px rgba(0,0,0,.08); display: none; }
+.detail-panel.open { display: block; }
+.detail-panel .close { position: sticky; top: 8px; float: right; background: var(--border); border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-size: 14px; color: var(--fg); }
+.detail-panel pre { background: var(--row-hover); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+.detail-panel .field { margin-bottom: 6px; }
+.detail-panel .field .k { color: var(--muted); font-size: 11px; }
+.detail-panel .field .v { font-size: 13px; }
+label { font-size: 12px; color: var(--muted); display: block; margin-top: 8px; }
+input[type=text], select { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--input-bg); color: var(--fg); font-size: 13px; margin-top: 2px; }
+button.primary { padding: 8px 20px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
+button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
+.overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: rgba(0,0,0,.3); z-index: 9; }
+.overlay.open { display: block; }
+.spark { display: flex; gap: 1px; margin: 8px 0; }
+.spark span { width: 6px; background: var(--accent); border-radius: 0 0 2px 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>.ai дашборд</h1>
+  <nav>
+    <button data-tab="jobs" class="active">Задачи</button>
+    <button data-tab="stats">Статистика</button>
+    <button data-tab="settings">Настройки</button>
+  </nav>
+  <span style="flex:1"></span>
+  <span id="conn" style="font-size:11px;color:var(--green)">●</span>
+</header>
+
+<main id="main"></main>
+<div class="overlay" id="overlay"></div>
+<div class="detail-panel" id="detail"></div>
+
+<script>
+const API = '';
+
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+async function get(url) {
+  const r = await fetch(API + url);
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}
+
+async function post(url, body) {
+  const r = await fetch(API + url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function statusBadge(s) { return '<span class="status ' + esc(s) + '">' + esc(s) + '</span>'; }
+
+function fmtNum(n) {
+  if (n == null) return '---';
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function fmtCost(j) {
+  if (j.cost == null) return '---';
+  if (j.cost === 0) return '$0';
+  return '$' + j.cost.toFixed(4);
+}
+
+// ===================================================================== JOBS
+
+let jobsCache = [];
+
+async function loadJobs() {
+  jobsCache = await get('/api/jobs');
+  renderJobs();
+}
+
+function renderJobs() {
+  const fStatus = $('#filter-status')?.value || '';
+  const fModel = $('#filter-model')?.value || '';
+  const fSearch = ($('#filter-search')?.value || '').toLowerCase();
+
+  let list = jobsCache.filter(j => {
+    if (fStatus && j.status !== fStatus) return false;
+    if (fModel && j.model !== fModel) return false;
+    if (fSearch && !(j.id + j.task).toLowerCase().includes(fSearch)) return false;
+    return true;
+  });
+
+  const models = [...new Set(jobsCache.map(j => j.model))].sort();
+
+  let h = '<div class="filters">';
+  h += '<select id="filter-status" onchange="renderJobs()"><option value="">все статусы</option>';
+  for (const s of ['completed','failed','running','killed','pending'])
+    h += '<option value="' + s + '"' + (fStatus === s ? ' selected' : '') + '>' + s + '</option>';
+  h += '</select>';
+  h += '<select id="filter-model" onchange="renderJobs()"><option value="">все модели</option>';
+  for (const m of models)
+    h += '<option value="' + m + '"' + (fModel === m ? ' selected' : '') + '>' + m + '</option>';
+  h += '</select>';
+  h += '<input id="filter-search" placeholder="поиск по задаче..." value="' + esc(fSearch) + '" oninput="renderJobs()">';
+  h += '<span style="margin-left:auto;color:var(--muted);font-size:12px">' + list.length + ' из ' + jobsCache.length + '</span>';
+  h += '</div>';
+
+  h += '<table><thead><tr>';
+  h += '<th>ID</th><th>Задача</th><th>Статус</th><th>Модель</th><th>variant</th><th>Проверка</th><th>Время</th><th>Стоимость</th><th>Токены</th>';
+  h += '</tr></thead><tbody>';
+
+  for (const j of list) {
+    const shortId = j.id.length > 42 ? j.id.slice(0, 39) + '...' : j.id;
+    h += '<tr onclick="openDetail(\'' + j.id + '\')">';
+    h += '<td style="font-family:monospace;font-size:11px" title="' + esc(j.id) + '">' + esc(shortId) + '</td>';
+    h += '<td>' + esc(j.task || '') + '</td>';
+    h += '<td>' + statusBadge(j.status) + '</td>';
+    h += '<td>' + esc(j.model) + '</td>';
+    h += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
+    h += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
+    h += '<td style="color:var(--muted)">' + esc(j.duration) + '</td>';
+    h += '<td>' + fmtCost(j) + '</td>';
+    h += '<td>' + (j.tokens ? fmtNum(j.tokens.total) : '---') + '</td>';
+    h += '</tr>';
+  }
+
+  h += '</tbody></table>';
+  $('#main').innerHTML = h;
+}
+
+// ===================================================================== DETAIL
+
+async function openDetail(id) {
+  const d = await get('/api/jobs/' + id);
+  let h = '<button class="close" onclick="closeDetail()">✕</button>';
+  h += '<h3>' + esc(d.task || d.id) + '</h3>';
+
+  const fields = [
+    ['ID', d.id], ['статус', d.status + (d.exitCode != null ? ' (код ' + d.exitCode + ')' : '')],
+    ['исполнитель', (d.runner || '') + (d.model ? ' / ' + d.model : '') + (d.variant ? ' (variant: ' + d.variant + ')' : '')],
+    ['директория', d.cwd], ['сессия', d.sessionId],
+    ['запущена', d.startedAt], ['длительность', fmtDuration(d.startedAt, d.finishedAt)],
+    ['стоимость', fmtCost(d)], ['токены', d.tokens ? 'всего ' + fmtNum(d.tokens.total) + ' (вход ' + fmtNum(d.tokens.input) + ', выход ' + fmtNum(d.tokens.output) + ')' : '---'],
+    ['проверка', d.verifyCmd], ['результат проверки', d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')],
+    ['изменения', d.changedFiles != null ? d.changedFiles + ' файлов' + (d.diffStat ? ' (' + esc(d.diffStat) + ')' : '') : '---'],
+    ['авто-коммит', d.autoCommitted != null ? (d.autoCommitted ? 'да (обёртка)' : 'нет') : '---'],
+    ['ошибка', d.error],
+    ['диагноз', d.diagnosis ? d.diagnosis.outcome + (d.diagnosis.lastErrorMessage ? ': ' + esc(d.diagnosis.lastErrorMessage.slice(0, 120)) : '') : '---'],
+  ];
+  for (const [k, v] of fields) {
+    if (v == null || v === '') continue;
+    h += '<div class="field"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>';
+  }
+
+  if (d.resultMd) {
+    h += '<h4 style="margin-top:16px">Результат (result.md)</h4>';
+    h += '<pre>' + esc(d.resultMd.slice(0, 8000)) + (d.resultMd.length > 8000 ? '\n... (обрезано, всего ' + d.resultMd.length + ' симв.)' : '') + '</pre>';
+  }
+  if (d.verifyLogTail) {
+    h += '<h4 style="margin-top:16px">verify.log</h4>';
+    h += '<pre>' + esc(d.verifyLogTail) + '</pre>';
+  }
+  if (d.stderrTail) {
+    h += '<h4 style="margin-top:16px">stderr (последние 100 строк)</h4>';
+    h += '<pre>' + esc(d.stderrTail) + '</pre>';
+  }
+
+  $('#detail').innerHTML = h;
+  $('#detail').classList.add('open');
+  $('#overlay').classList.add('open');
+}
+
+function closeDetail() {
+  $('#detail').classList.remove('open');
+  $('#overlay').classList.remove('open');
+}
+
+function fmtDuration(from, to) {
+  if (!from || !to) return '---';
+  const d = new Date(to) - new Date(from);
+  if (isNaN(d)) return '---';
+  const s = Math.floor(d / 1000);
+  if (s < 60) return s + 'с';
+  if (s < 3600) return Math.floor(s / 60) + 'м ' + (s % 60) + 'с';
+  return Math.floor(s / 3600) + 'ч ' + Math.floor((s % 3600) / 60) + 'м';
+}
+
+// ===================================================================== STATS
+
+async function loadStats() {
+  const s = await get('/api/stats');
+  const a = s.all;
+
+  let h = '<div class="stats-grid">';
+  h += statCard('Задач', a.total);
+  h += statCard('Успешно', (100 * a.completed / a.total).toFixed(0) + '%');
+  h += statCard('Токенов', fmtNum(a.tokens.total));
+  h += statCard('Стоимость', '$' + (a.cost || 0).toFixed(4));
+  h += '</div>';
+
+  // by capability
+  h += '<div class="card"><h3>По типу задач</h3><table><thead><tr><th>Тип</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
+  for (const [cap, d] of Object.entries(s.byCapability || {})) {
+    h += '<tr><td>' + esc(cap) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  // by model
+  h += '<div class="card"><h3>По моделям</h3><table><thead><tr><th>Модель</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
+  for (const [m, d] of Object.entries(s.byModel || {})) {
+    h += '<tr><td>' + esc(m) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  // daily sparklines
+  const days = Object.entries(s.byDay || {}).sort();
+  if (days.length > 1) {
+    const maxT = Math.max(...days.map(([_,d]) => d.tokens.total));
+    h += '<div class="card"><h3>Токены по дням</h3>';
+    h += '<div class="chart">';
+    for (const [day, d] of days) {
+      const pct = maxT > 0 ? (d.tokens.total / maxT * 100) : 0;
+      h += '<div style="height:' + Math.max(pct, 2) + '%" title="' + day + ': ' + fmtNum(d.tokens.total) + ' токенов"></div>';
+    }
+    h += '</div>';
+    h += '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)">';
+    h += '<span>' + days[0][0] + '</span><span>' + days[days.length-1][0] + '</span>';
+    h += '</div></div>';
+  }
+
+  $('#main').innerHTML = h;
+}
+
+function statCard(label, value) {
+  return '<div class="stat"><div class="val">' + esc(String(value)) + '</div><div class="lbl">' + esc(label) + '</div></div>';
+}
+
+// ===================================================================== SETTINGS
+
+async function loadSettings() {
+  const caps = await get('/api/capabilities');
+  let h = '<div class="card"><h3>Capabilities</h3>';
+
+  for (const [name, c] of Object.entries(caps)) {
+    h += '<div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">';
+    h += '<strong>' + esc(name) + '</strong>';
+    h += '<label>Модель</label><input type="text" id="cap-' + name + '-model" value="' + esc(c.model) + '">';
+    h += '<label>Variant</label><select id="cap-' + name + '-variant">';
+    for (const v of ['','minimal','low','medium','high','max'])
+      h += '<option value="' + v + '"' + ((c.variant || '') === v ? ' selected' : '') + '>' + (v || 'нет') + '</option>';
+    h += '</select>';
+    h += '<label>Worktree</label><select id="cap-' + name + '-worktree">';
+    h += '<option value="1"' + (c.worktree ? ' selected' : '') + '>да</option>';
+    h += '<option value="0"' + (!c.worktree ? ' selected' : '') + '>нет</option>';
+    h += '</select>';
+    h += '<br><button class="primary" onclick="saveCap(\'' + name + '\')">Сохранить ' + esc(name) + '</button>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="card"><h3>Очистка</h3>';
+  h += '<p style="color:var(--muted);font-size:13px">Запустить worktree-gc --apply (только чистые + смердженные ветки) и clean --days 7.</p>';
+  h += '<button class="danger" onclick="runCleanup()">Очистить</button>';
+  h += '<pre id="cleanup-output" style="margin-top:8px;display:none"></pre>';
+  h += '</div>';
+
+  $('#main').innerHTML = h;
+}
+
+async function saveCap(name) {
+  const model = $('#cap-' + name + '-model').value;
+  const variant = $('#cap-' + name + '-variant').value || null;
+  const worktree = $('#cap-' + name + '-worktree').value === '1';
+  try {
+    const r = await post('/api/capabilities/' + name, { model, variant, worktree });
+    if (r.ok) alert(name + ': сохранено');
+    else alert('Ошибка: ' + r.error);
+  } catch(e) { alert('Ошибка: ' + e.message); }
+}
+
+async function runCleanup() {
+  if (!confirm('Запустить очистку? Будут удалены задачи старше 7 дней и worktree-ветки без задач.')) return;
+  const out = $('#cleanup-output');
+  out.style.display = 'block';
+  out.textContent = 'Выполняется...';
+  try {
+    const r = await post('/api/cleanup', {});
+    out.textContent = r.ok ? r.output : ('Ошибка: ' + r.error);
+  } catch(e) {
+    out.textContent = 'Ошибка: ' + e.message;
+  }
+}
+
+// ===================================================================== TAB ROUTING
+
+const routes = {
+  jobs: loadJobs,
+  stats: loadStats,
+  settings: loadSettings,
+};
+
+function switchTab(name) {
+  $$('nav button').forEach(b => b.classList.remove('active'));
+  $('nav button[data-tab="' + name + '"]').classList.add('active');
+  routes[name]();
+}
+
+$$('nav button').forEach(b => {
+  b.addEventListener('click', () => switchTab(b.dataset.tab));
+});
+
+$('#overlay').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+// init
+loadJobs();
+</script>
+</body>
+</html>

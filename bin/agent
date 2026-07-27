@@ -52,6 +52,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent init                                           глобальная установка skill (копирует SKILL.md
                                                        в ~/.claude/skills/agent-bridge/ — после этого
                                                        ЛЮБОЙ проект может вызывать делегирование)
+  agent dashboard [--port N] [--open]                  локальный веб-дашборд (localhost:9191)
 
 Опции start:
   --task <slug>          имя задачи (обязательно), участвует в jobId
@@ -608,6 +609,24 @@ cmd_init() {
   echo "Документация: .ai/README.md"
 }
 
+cmd_dashboard() {
+  local port="9191" open_flag=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port) port="${2:-9191}"; shift 2 ;;
+      --open) open_flag="--open"; shift ;;
+      *) die "неизвестная опция: $1" ;;
+    esac
+  done
+
+  local dashboard_js; dashboard_js="$(winpath "$LIB/dashboard.js")"
+  [[ -f "$dashboard_js" ]] || die "dashboard.js не найден: $dashboard_js"
+
+  echo "запуск дашборда на http://localhost:$port ..."
+  $NODE "$dashboard_js" --port "$port" $open_flag
+}
+
 main() {
   require_node
   mkdir -p "$JOBS_DIR"
@@ -634,6 +653,7 @@ main() {
     stats)   agent_js stats "$JOBS_DIR" "${1:-}" ;;
     capability) agent_js capability "${1:-}" ;;
     init)    cmd_init ;;
+    dashboard) cmd_dashboard "$@" ;;
     heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
