@@ -246,7 +246,7 @@ cmd_start() {
     agent_name="$capability"
     local deployer; deployer="$(winpath "$LIB/deploy-agent.js")"
     if [[ -f "$deployer" ]]; then
-      $NODE "$deployer" "$(winpath "$AI_HOME/agents")" "$agent_name" --target "$(winpath "$cwd")" 2>/dev/null || true
+      $NODE "$deployer" "$(winpath "$AI_HOME/agents")" "$agent_name" --target "$(winpath "$cwd")" >&2 2>/dev/null || true
     fi
   fi
 
