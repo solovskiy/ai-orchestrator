@@ -94,4 +94,101 @@ function testGitChangeSummaryMtime() {
 
 testGitChangeSummaryMtime();
 
+// ------------------------------------------------------------------ self-commit integration test
+//
+// Сценарий: агент сам сделал git commit в процессе работы — рабочая
+// директория снова чистая, pre-status.txt пуст. gitChangeSummary должен
+// найти изменения через сравнение HEAD "до старта" с текущим HEAD
+// (git diff --name-only startCommit..HEAD).
+
+function testGitChangeSummarySelfCommit() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-selfcommit-test-'));
+  const preDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-selfcommit-pre-'));
+
+  try {
+    execFileSync('git', ['init'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tmpDir, stdio: 'pipe' });
+
+    // Начальный коммит
+    fs.writeFileSync(path.join(tmpDir, 'file.txt'), 'v1');
+    execFileSync('git', ['add', 'file.txt'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: tmpDir, stdio: 'pipe' });
+
+    // Зафиксировать startCommit — HEAD до старта задачи
+    const startCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: tmpDir, encoding: 'utf8', stdio: 'pipe',
+    }).trim();
+    assert.ok(startCommit, 'startCommit should not be empty');
+
+    // Снепшот pre-status — репозиторий чистый (никаких pre-existing изменений)
+    fs.writeFileSync(path.join(preDir, 'pre-status.txt'), '');
+
+    // Старт задачи
+    const startedAt = new Date().toISOString();
+
+    // Имитация работы агента: изменить файл и самому закоммитить
+    fs.writeFileSync(path.join(tmpDir, 'file.txt'), 'v2');
+    execFileSync('git', ['add', 'file.txt'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'agent: changed file'], { cwd: tmpDir, stdio: 'pipe' });
+
+    // После коммита рабочая директория снова чистая
+    const postStatus = execFileSync('git', ['status', '--porcelain'], {
+      cwd: tmpDir, encoding: 'utf8', stdio: 'pipe',
+    });
+    assert.strictEqual(postStatus.trim(), '', 'working tree should be clean after agent self-commit');
+
+    // gitChangeSummary должен найти изменение через committed-diff
+    const result = gitChangeSummary(tmpDir, preDir, startedAt, startCommit);
+    assert.ok(result !== null, 'gitChangeSummary should not return null');
+    assert.strictEqual(result.changedFiles, 1,
+      'should detect 1 changed file via commit diff (agent self-committed)');
+    assert.ok(result.diffStat, 'diffStat should include committed summary');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(preDir, { recursive: true, force: true });
+  }
+}
+
+testGitChangeSummarySelfCommit();
+
+// ------------------------------------------------------------------ null startCommit backward compat
+//
+// Сценарий: startCommit === null (старая задача или не-git репозиторий) —
+// gitChangeSummary не должен падать, должен вести себя как раньше
+// (только porcelain + mtime).
+
+function testGitChangeSummaryNullStartCommit() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-nullcommit-test-'));
+  const preDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-nullcommit-pre-'));
+
+  try {
+    execFileSync('git', ['init'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tmpDir, stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(tmpDir, 'file.txt'), 'v1');
+    execFileSync('git', ['add', 'file.txt'], { cwd: tmpDir, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: tmpDir, stdio: 'pipe' });
+
+    // Пустой pre-status (чистый репо до старта)
+    fs.writeFileSync(path.join(preDir, 'pre-status.txt'), '');
+
+    // Изменяем файл НЕ коммитя — dirt status
+    fs.writeFileSync(path.join(tmpDir, 'file.txt'), 'v2');
+
+    // Вызов с startCommit === null — не должен падать
+    const result = gitChangeSummary(tmpDir, preDir, null, null);
+    assert.ok(result !== null, 'gitChangeSummary should not return null with null startCommit');
+    assert.strictEqual(result.changedFiles, 1,
+      'should detect uncommitted change (porcelain) even with null startCommit');
+    assert.ok(result.diffStat, 'diffStat should be present');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(preDir, { recursive: true, force: true });
+  }
+}
+
+testGitChangeSummaryNullStartCommit();
+
 console.log('diff-status-lines: OK');

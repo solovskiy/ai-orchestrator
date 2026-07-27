@@ -52,6 +52,10 @@ jset status=running "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # --- снепшот git-status до старта (для фильтрации pre-existing файлов) ---
 ( cd "$CWD" && git status --porcelain 2>/dev/null ) > "$JOB_DIR/pre-status.txt" || true
 
+# --- зафиксировать HEAD до старта, чтобы позже найти закоммиченные агентом изменения ---
+START_COMMIT="$(cd "$CWD" && git rev-parse HEAD 2>/dev/null)" || true
+[[ -n "$START_COMMIT" ]] && jset "startCommit=$START_COMMIT"
+
 # --- собственно агент: stdout -> JSONL, stderr отдельно ---
 cd "$CWD" || true
 "${ARGS[@]}" > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &
