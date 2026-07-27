@@ -87,6 +87,13 @@ test('success (synthetic)', () => {
   );
 });
 
+test('error — runner-level error (not tool_use)', () => {
+  assert.strictEqual(
+    classifyOutcome(loadEvents('error')),
+    'error',
+  );
+});
+
 test('no_events — empty array', () => {
   assert.strictEqual(classifyOutcome([]), 'no_events');
 });

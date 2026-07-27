@@ -186,6 +186,15 @@ cmd_start() {
   if [[ -e "$job_dir" ]]; then
     die "коллизия jobId: $job_dir уже существует, перезапусти"
   fi
+
+  # Проверка лимита ДО аллокации ресурсов — иначе остаются осиротевшие worktree + job_dir
+  local running_count max_parallel_limit
+  running_count="$(agent_js running-count "$JOBS_DIR")"
+  max_parallel_limit="${max_parallel:-${AGENT_MAX_PARALLEL:-3}}"
+  if (( force != 1 && running_count >= max_parallel_limit )); then
+    die "уже $running_count задач(и) в статусе 'running' (лимит: $max_parallel_limit). Используй --force чтобы запустить, или agent kill для остановки лишних"
+  fi
+
   mkdir -p "$job_dir" || die "не удалось создать $job_dir"
   printf '%s\n' "$prompt" > "$job_dir/prompt.md"
 
@@ -224,13 +233,6 @@ cmd_start() {
     "model=$model" \
     "verifyCmd=$verify" \
     || die "не удалось создать job.json"
-
-  local running_count max_parallel_limit
-  running_count="$(agent_js running-count "$JOBS_DIR")"
-  max_parallel_limit="${max_parallel:-${AGENT_MAX_PARALLEL:-3}}"
-  if (( force != 1 && running_count >= max_parallel_limit )); then
-    die "уже $running_count задач(и) в статусе 'running' (лимит: $max_parallel_limit). Используй --force чтобы запустить, или agent kill для остановки лишних"
-  fi
 
   NODE="$NODE" AGENT_JS_WIN="$AGENT_JS_WIN" nohup bash "$LIB/run-job.sh" "$job_dir" >/dev/null 2>&1 &
   disown 2>/dev/null || true

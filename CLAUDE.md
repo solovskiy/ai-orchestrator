@@ -48,14 +48,18 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 ```
 .ai/
   bin/agent              CLI (bash): delegate, start, wait, heal, ...
-  lib/agent.js            работа с JSON
-  lib/run-job.sh          обёртка фонового запуска
-  lib/runners/*.js        адаптеры: opencode, claude, gemini, codex
-  lib/models.json         маппинг model→runner
+  lib/agent.js           работа с JSON
+  lib/run-job.sh         обёртка фонового запуска (авто-коммит, verify)
+  lib/diagnosis.js       классификация провалов
+  lib/models.json        маппинг model→runner
+  lib/runners/*.js       адаптеры: opencode, claude, gemini, codex
   capabilities/*/capability.json   дефолты model/worktree по задаче
                           (research, coding)
-  jobs/<id>/              состояние задач
-  memory/index.json       долговременная память
+  hooks/                 PreToolUse-хуки (напоминания о делегировании)
+  test/                  юнит-тесты (diagnosis, diffStatusLines)
+  scripts/               разовые обслуживающие скрипты
+  jobs/<id>/             состояние задач + out.jsonl + diagnosis.json
+  memory/index.json      долговременная память
 ```
 
 ## Полные правила делегирования

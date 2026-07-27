@@ -60,20 +60,28 @@ capability вместо имени модели. Запускать целико
 |---|---|
 | `delegate` | **рекомендуемый вход**: start + wait + (при необходимости) heal + result одним вызовом |
 | `start` | запустить задачу в фоне (возвращает управление сразу, без ожидания) |
-| `chat` | интерактивный чат с моделью (foreground) |
+| `chat` | интерактивный чат с моделью в терминале (foreground, не фон); требует `--model` |
 | `send <id> "<текст>"` | продолжить сессию новой задачей |
 | `list` | таблица всех задач: модель, статус, проверка, время, стоимость |
-| `status <id>` | детали задачи; при провале проверки — хвост `verify.log` |
+| `status <id>` | детали задачи; при провале проверки — хвост `verify.log`; показывает `autoCommitted`, `changedFiles`, `diagnosis` |
 | `tail <id> [n]` | последние строки вывода агента |
 | `wait <id>...` | ждать завершения задач(и); запускать в фоне — даёт уведомление (см. `docs/workflow.md`) |
 | `result <id>` | только итоговый ответ |
 | `kill <id>` | остановить |
 | `heal <id>` | одноразовое автовосстановление проваленной задачи (`validation_error`/`abandoned`) — отправляет структурированное сообщение в сессию (см. `diagnosis.json`, поле `outcome`); `delegate` вызывает это сам |
+| `worktree-gc` | безопасная уборка worktree-веток (только чистые + смердженные); без `--apply` — dry-run |
 | `clean [--days N]` | убрать задачи старше N дней (по умолч. 7) |
 | `remember <key> "<value>"` | запомнить факт в долговременную память |
 | `recall [<pattern>]` | найти факты по ключу/тегу/значению |
 | `forget <key>` | удалить факт |
 | `learn <jobId>` | извлечь знание из результата завершённой задачи |
+
+Флаги `delegate`: `--timeout <сек>` (по умолч. 1800), `--no-heal` (не пытаться
+восстановить при провале).
+
+Флаги `start`: `--max-parallel <N>` / переменная `AGENT_MAX_PARALLEL`
+(по умолч. 3) — лимит одновременно выполняющихся задач. `--force` запускает
+сверх лимита.
 
 Полный список опций — `agent --help`.
 
@@ -110,6 +118,7 @@ capability — переопределить для конкретного выз
 | `opencode/*` | opencode |
 | `deepseek/*` | opencode |
 | `openai/*` | opencode |
+| `anthropic/*` | opencode |
 | `claude/*` | claude (Claude Code CLI) |
 | `gemini/*` | gemini (Gemini CLI) |
 | `codex/*` | codex (Codex CLI) |
@@ -135,12 +144,17 @@ capability — переопределить для конкретного выз
 ```
 .ai/
   bin/agent              CLI: delegate, start, worktree, отсоединённый запуск
-  lib/run-job.sh         обёртка, внутри которой живёт агент
+  lib/run-job.sh         обёртка, внутри которой живёт агент (авто-коммит, verify)
   lib/agent.js           работа с JSON, разбор потока событий, вывод таблиц
-  lib/runners/*.js       адаптеры исполнителей
+  lib/diagnosis.js       классификация провалов (outcome для heal)
+  lib/models.json        маппинг префикса модели → runner
+  lib/runners/*.js       адаптеры исполнителей (opencode, claude, gemini, codex)
   capabilities/*/capability.json   дефолты model/worktree по задаче
-  jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log
+  hooks/                 PreToolUse-хуки: напоминание о делегировании
   scripts/               разовые обслуживающие скрипты
+  test/                  юнит-тесты (diagnosis, diffStatusLines)
+  jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
+  memory/index.json      долговременная память (remember/recall)
   research/              отчёты делегированных исследований
 ```
 
@@ -176,6 +190,62 @@ worktree без установки зависимостей **упадёт на 
 для стека проекта — `npm install …` и, если есть, генерация клиента/схемы
 (`npx prisma generate` и т.п.). Не полагаться на то, что окружение «уже
 где-то есть» — worktree его не наследует.
+
+## Авто-коммит в worktree
+
+Если задача запущена с worktree (`--capability coding` или `--worktree`),
+обёртка `run-job.sh` в конце автоматически коммитит незакоммиченные
+изменения — на случай, если модель забыла сделать `git commit` сама.
+Сообщение коммита генерируется из `task`, `model` и первых строк
+`result.md`. Для задач БЕЗ worktree авто-коммит не делается (коммит
+в основную ветку — решение оркестратора, не автоматики).
+
+Флаг `autoCommitted` (true/false) виден в `agent status` и `job.json`.
+Если `autoCommitted: false` для worktree-задачи — либо изменений не было,
+либо авто-коммит не смог выполниться (проверить работу вручную:
+`git diff --stat` в worktree).
+
+## Диагностика провалов (`diagnosis.json`)
+
+При не-success-исходе (`validation_error`, `permission_rejected`,
+`abandoned`, `error`, `no_events`) `agent.js finalize` пишет
+`diagnosis.json` в каталог задачи:
+
+```json
+{
+  "outcome": "validation_error",
+  "prompt": "текст запроса из потока событий",
+  "toolCalls": [
+    {"tool": "write", "status": "error", "error": "invalid arguments: content is required"}
+  ],
+  "lastErrorMessage": "invalid arguments: content is required",
+  "textAfterLastError": "Let me fix the arguments",
+  "resumedAfterError": true
+}
+```
+
+- `outcome` — `success | validation_error | permission_rejected | abandoned | error | no_events`
+- `toolCalls` — все вызовы инструментов с их статусами и ошибками
+- `lastErrorMessage` — текст последней ошибки
+- `textAfterLastError` — что модель написала после ошибки (если пыталась чинить сама)
+- `resumedAfterError` — boolean, чинилась ли модель сама после ошибки
+
+`agent heal` читает `diagnosis.json` и отправляет структурированное
+сообщение в ту же сессию для retry. `agent status` показывает outcome
+в строке диагноза.
+
+## Хуки и тесты
+
+- **`hooks/`** — PreToolUse-хуки, которые подмешивают напоминания в контекст
+  оркестратора (не блокируют вызов):
+  - `research-delegation-reminder.js` — считает вызовы WebFetch/WebSearch
+    подряд; на 3-м напоминает делегировать многоисточниковое исследование
+  - `prefer-ai-agent-over-subagent.js` — перехватывает вызов встроенного
+    субагента Claude Code и предлагает использовать `.ai/bin/agent`
+    (дешевле, изолированный контекст)
+- **`test/`** — юнит-тесты на чистой Node (без внешних зависимостей):
+  `diagnosis.test.js` (классификация исходов), `diff-status-lines.test.js`
+  (фильтрация изменений git diff с pre-status снимком)
 
 ## Написание ТЗ — обязательные правила
 
