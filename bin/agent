@@ -55,12 +55,16 @@ agent — оркестрация CLI-агентов как фоновых зад
   --prompt-file <path>   ТЗ из файла
   --prompt <text>        ТЗ строкой
                          (если ни того ни другого — читается со stdin)
+  --capability <name>    research | coding — подставляет model/worktree из
+                         capabilities/<name>/capability.json (пока везде
+                         зашита бесплатная opencode/deepseek-v4-flash-free)
   --worktree             создать git worktree под задачу и работать в нём
   --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
   --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
   --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
                          (если не указан --runner, определяется автоматом:
-                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini)
+                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini;
+                         переопределяет модель из --capability)
   --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
   --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
 
@@ -118,7 +122,7 @@ job_dir_of() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
-  local max_parallel="" force=0
+  local max_parallel="" force=0 capability=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -126,6 +130,7 @@ cmd_start() {
       --repo)        repo="${2:-}"; shift 2 ;;
       --prompt-file) prompt_file="${2:-}"; shift 2 ;;
       --prompt)      prompt_text="${2:-}"; shift 2 ;;
+      --capability)  capability="${2:-}"; shift 2 ;;
       --model)       model="${2:-}"; shift 2 ;;
       --verify)      verify="${2:-}"; shift 2 ;;
       --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
@@ -139,8 +144,24 @@ cmd_start() {
     esac
   done
 
-  # Дефолтная модель, если --model не задан: бесплатная OpenCode Zen.
-  # Переопределить — --model (для ресёрча: deepseek/deepseek-v4-pro).
+  # --capability <name>: подставляет дефолты (model, worktree) из
+  # capabilities/<name>/capability.json — явно переданные --model/--worktree
+  # приоритетнее и capability их не перезаписывает.
+  if [[ -n "$capability" ]]; then
+    local cap_file="$AI_HOME/capabilities/$capability/capability.json"
+    [[ -f "$cap_file" ]] || die "неизвестная capability: $capability (нет $cap_file)"
+    local cap_model cap_worktree
+    { IFS= read -r cap_model; IFS= read -r cap_worktree; } \
+      < <(agent_js capability "$capability") \
+      || die "capability: не удалось прочитать $capability"
+    [[ -n "$model" ]] || model="$cap_model"
+    if [[ "$cap_worktree" == "1" && "$make_worktree" == "0" ]]; then
+      make_worktree=1
+    fi
+  fi
+
+  # Дефолтная модель, если ни --model, ни --capability не заданы:
+  # бесплатная OpenCode Zen. Переопределить — --model.
   model="${model:-opencode/deepseek-v4-flash-free}"
 
   [[ -n "$task" ]] || die "--task обязателен"
