@@ -1,6 +1,6 @@
 {
   "name": "research",
-  "model": "opencode/nemotron-3-ultra-free",
+  "model": "opencode/deepseek-v4-flash-free",
   "variant": "high",
   "mode": "primary",
   "worktree": false,

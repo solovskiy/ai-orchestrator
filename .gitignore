@@ -4,6 +4,9 @@ jobs/
 # Сгенерированные агенты (deploy-agent создаёт .md из agents/*.json)
 .opencode/
 
+# Worktree'ы кодовых агентов (agent/<task> ветки, создаются per-task)
+.claude/worktrees/
+
 # Резервные копии окружения/реестра (машинозависимые, могут содержать пути)
 backups/
 
