@@ -39,6 +39,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent result  <jobId>                               только итоговый ответ агента
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
   agent kill    <jobId>                               остановить задачу
+  agent heal    <jobId>                               восстановить проваленную задачу (validation_error/abandoned)
   agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
   agent worktree-gc --repo <path> [--apply]           отчёт/уборка worktree (безопасно: только чистые+смерджённые)
   agent remember <key> "<value>" [--tags a,b] [--source <id>]   запомнить факт
@@ -506,6 +507,7 @@ main() {
     recall)  cmd_recall "$@" ;;
     forget)  cmd_forget "$@" ;;
     learn)   cmd_learn "$@" ;;
+    heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
   esac

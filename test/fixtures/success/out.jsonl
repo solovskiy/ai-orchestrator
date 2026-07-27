@@ -1,0 +1,3 @@
+{"type":"text","part":{"text":"Here is my research on tax rates"}}
+{"type":"tool_use","part":{"tool":"todowrite","state":{"status":"success"}}}
+{"type":"step_finish","part":{"reason":"completed","cost":0.002,"tokens":{"input":200,"output":150,"total":350}}}
