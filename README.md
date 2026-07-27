@@ -63,6 +63,7 @@ capability вместо имени модели. Запускать целико
 | `chat` | интерактивный чат с моделью в терминале (foreground, не фон); требует `--model` |
 | `send <id> "<текст>"` | продолжить сессию новой задачей |
 | `list` | таблица всех задач: модель, статус, проверка, время, стоимость |
+| `stats [--days N] [--json]` | агрегация стоимости и токенов: всего / по моделям / по capability |
 | `status <id>` | детали задачи; при провале проверки — хвост `verify.log`; показывает `autoCommitted`, `changedFiles`, `diagnosis` |
 | `tail <id> [n]` | последние строки вывода агента |
 | `wait <id>...` | ждать завершения задач(и); запускать в фоне — даёт уведомление (см. `docs/workflow.md`) |
@@ -91,22 +92,29 @@ capability вместо имени модели. Запускать целико
 из `capabilities/<name>/capability.json` — вызывающий думает задачей
 («research», «coding»), а не именем модели или раннером:
 
-| Capability | Файл | Сейчас |
-|---|---|---|
-| `research` | `capabilities/research/capability.json` | `opencode/deepseek-v4-flash-free`, без worktree |
-| `coding` | `capabilities/coding/capability.json` | `opencode/deepseek-v4-flash-free`, с worktree |
+| Capability | Файл | model | worktree | variant |
+|---|---|---|---|---|
+| `research` | `capabilities/research/capability.json` | `opencode/deepseek-v4-flash-free` | нет | `high` |
+| `coding` | `capabilities/coding/capability.json` | `opencode/deepseek-v4-flash-free` | да | `medium` |
 
 Обе временно зашиты на бесплатную модель (см. `docs/workflow.md` — платный
-DeepSeek приостановлен). Явные `--model`/`--worktree` всегда побеждают
-capability — переопределить для конкретного вызова можно, не трогая файл:
+DeepSeek приостановлен). Явные `--model`/`--worktree`/`--variant` всегда
+побеждают capability — переопределить для конкретного вызова можно, не
+трогая файл:
 
 ```bash
 .ai/bin/agent delegate --task deep-research --repo . \
-  --capability research --model deepseek/deepseek-v4-pro --prompt-file tz.md
+  --capability research --model deepseek/deepseek-v4-pro --variant max --prompt-file tz.md
 ```
 
+`--variant` передаётся в opencode как `--variant <level>`. Допустимые
+значения: `minimal`, `low`, `medium`, `high`, `max`. Рекомендации на основе
+effortmining benchmark (64.7% экономии токенов при том же качестве): coding →
+medium, research → high.
+
 Добавить новую capability — создать `capabilities/<name>/capability.json`
-с полями `model` (обязательно) и `worktree` (bool, по умолчанию `false`).
+с полями `model` (обязательно), `worktree` (bool, по умолчанию `false`),
+`variant` (string, опционально).
 
 ## Мультимодельность
 

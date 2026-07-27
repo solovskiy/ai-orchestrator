@@ -1,5 +1,6 @@
 {
   "model": "opencode/deepseek-v4-flash-free",
   "worktree": false,
-  "_note": "временно бесплатная модель для всех capability (см. docs/workflow.md); для research в норме --model deepseek/deepseek-v4-pro, вернуть после пополнения баланса"
+  "variant": "high",
+  "_note": "research: high variant — синтез источников требует deeper reasoning. Временно бесплатная модель; в норме deepseek/deepseek-v4-pro, вернуть после пополнения баланса"
 }

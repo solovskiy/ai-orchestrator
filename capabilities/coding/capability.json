@@ -1,5 +1,6 @@
 {
   "model": "opencode/deepseek-v4-flash-free",
   "worktree": true,
-  "_note": "бесплатная модель по умолчанию для механической генерации; для сложных/дорогих задач переопределить --model явно"
+  "variant": "medium",
+  "_note": "coding: medium variant — 56% экономии токенов vs max при том же качестве (effortmining benchmark). Переопределить: --variant high"
 }

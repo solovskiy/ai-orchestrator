@@ -48,6 +48,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent recall [<pattern>]                              найти факты (по умолч. всё)
   agent forget <key>                                    забыть факт
   agent learn <jobId>                                   извлечь знание из результата задачи
+  agent stats [--days N] [--json]                      агрегация стоимости и токенов по всем задачам
   agent init                                           глобальная установка skill (копирует SKILL.md
                                                        в ~/.claude/skills/agent-bridge/ — после этого
                                                        ЛЮБОЙ проект может вызывать делегирование)
@@ -62,6 +63,8 @@ agent — оркестрация CLI-агентов как фоновых зад
                          capabilities/<name>/capability.json (пока везде
                          зашита бесплатная opencode/deepseek-v4-flash-free)
   --worktree             создать git worktree под задачу и работать в нём
+  --variant <level>      уровень усилия: minimal, low, medium, high, max
+                         (по умолчанию из capability.json; переопределяет)
   --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
   --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
   --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
@@ -125,7 +128,7 @@ job_dir_of() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
-  local max_parallel="" force=0 capability=""
+  local max_parallel="" force=0 capability="" variant=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -140,6 +143,7 @@ cmd_start() {
       --branch)      branch="${2:-}"; shift 2 ;;
       --base)        base="${2:-}"; shift 2 ;;
       --worktree)    make_worktree=1; shift ;;
+      --variant)     variant="${2:-}"; shift 2 ;;
       --max-parallel) max_parallel="${2:-}"; shift 2 ;;
       --force)        force=1; shift ;;
       -h|--help)     usage; return 0 ;;
@@ -153,11 +157,12 @@ cmd_start() {
   if [[ -n "$capability" ]]; then
     local cap_file="$AI_HOME/capabilities/$capability/capability.json"
     [[ -f "$cap_file" ]] || die "неизвестная capability: $capability (нет $cap_file)"
-    local cap_model cap_worktree
-    { IFS= read -r cap_model; IFS= read -r cap_worktree; } \
+    local cap_model cap_worktree cap_variant
+    { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
       < <(agent_js capability "$capability") \
       || die "capability: не удалось прочитать $capability"
     [[ -n "$model" ]] || model="$cap_model"
+    [[ -n "$variant" ]] || variant="$cap_variant"
     if [[ "$cap_worktree" == "1" && "$make_worktree" == "0" ]]; then
       make_worktree=1
     fi
@@ -234,6 +239,7 @@ cmd_start() {
     "worktree=$make_worktree" \
     "branch=$branch" \
     "model=$model" \
+    "variant=$variant" \
     "verifyCmd=$verify" \
     || die "не удалось создать job.json"
 
@@ -625,6 +631,8 @@ main() {
     recall)  cmd_recall "$@" ;;
     forget)  cmd_forget "$@" ;;
     learn)   cmd_learn "$@" ;;
+    stats)   agent_js stats "$JOBS_DIR" "${1:-}" ;;
+    capability) agent_js capability "${1:-}" ;;
     init)    cmd_init ;;
     heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
