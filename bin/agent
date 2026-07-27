@@ -40,6 +40,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
   agent kill    <jobId>                               остановить задачу
   agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
+  agent worktree-gc --repo <path> [--apply]           отчёт/уборка worktree (безопасно: только чистые+смерджённые)
   agent remember <key> "<value>" [--tags a,b] [--source <id>]   запомнить факт
   agent recall [<pattern>]                              найти факты (по умолч. всё)
   agent forget <key>                                    забыть факт
@@ -431,6 +432,21 @@ cmd_clean() {
   agent_js clean "$JOBS_DIR" "$days"
 }
 
+cmd_worktree_gc() {
+  local repo="" apply=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)   repo="${2:-}"; shift 2 ;;
+      --apply)  apply="--apply"; shift ;;
+      -h|--help) echo "agent worktree-gc --repo <path> [--apply]  (без --apply — только отчёт, ничего не удаляет)"; return 0 ;;
+      *) die "неизвестная опция: $1" ;;
+    esac
+  done
+  [[ -n "$repo" ]] || die "--repo обязателен"
+  [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
+  agent_js worktree-gc "$(winpath "$repo")" "$apply"
+}
+
 cmd_remember() {
   local key="" value="" tags="" source=""
   while [[ $# -gt 0 ]]; do
@@ -479,6 +495,7 @@ main() {
     send)    cmd_send "$@" ;;
     kill)    cmd_kill "$@" ;;
     clean)   cmd_clean "$@" ;;
+    worktree-gc) cmd_worktree_gc "$@" ;;
     list)    agent_js list "$JOBS_DIR" ;;
     status)  agent_js show "$(job_dir_of "${1:-}")" ;;
     tail)    agent_js tail "$(job_dir_of "${1:-}")" "${2:-20}" ;;
