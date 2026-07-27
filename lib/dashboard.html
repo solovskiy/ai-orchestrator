@@ -349,7 +349,7 @@ async function loadSettings() {
   // Редактор (скрыт, показывается при клике)
   h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-  h += '<div><label>Модель ' + tip('Формат: provider/model. Пример: deepseek/deepseek-v4-flash-free') + '</label><input type="text" id="ae-model"></div>';
+  h += '<div><label>Модель ' + tip('Выбери из списка или введи вручную. 🔄 — обновить список из opencode models.') + '</label><div style="display:flex;gap:4px"><input type="text" id="ae-model" list="models-list" style="flex:1"><button onclick="refreshModels();return false" title="Обновить список из opencode" style="padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:5px;cursor:pointer">🔄</button></div><datalist id="models-list"></datalist></div>';
   h += '<div><label>Variant ' + tip('Уровень reasoning: minimal, low, medium, high, max. Выше = умнее но дороже. medium для кода, high для ресёрча.') + '</label><select id="ae-variant">';
   for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
   h += '</select></div>';
@@ -388,6 +388,13 @@ async function editAgent(name) {
   const expBtn = $('#ae-export');
   if (expBtn) expBtn.setAttribute('onclick', 'exportAgent(\'' + name + '\')');
   $('#ae-model').value = a.model || '';
+  // ensure model is in datalist
+  const dl = $('#models-list');
+  if (a.model && ![...dl.options].some(o => o.value === a.model)) {
+    const opt = document.createElement('option');
+    opt.value = a.model; opt.textContent = a.model;
+    dl.appendChild(opt);
+  }
   $('#ae-variant').value = a.variant || '';
   $('#ae-mode').value = a.mode || 'primary';
   $('#ae-temp').value = a.temperature != null ? a.temperature : '';
@@ -460,6 +467,26 @@ async function runCleanup() {
     out.textContent = 'Ошибка: ' + e.message;
   }
 }
+
+// ===================================================================== MODELS
+
+async function refreshModels() {
+  try {
+    const r = await get('/api/models');
+    const dl = $('#models-list');
+    dl.innerHTML = '';
+    for (const m of r.models) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label || m.id;
+      dl.appendChild(opt);
+    }
+    toast('моделей загружено: ' + r.models.length + ' (' + r.source + ')');
+  } catch(e) { toast('ошибка загрузки моделей', 'err'); }
+}
+
+// preload models on settings page
+(async function() { await refreshModels(); })();
 
 // ===================================================================== TAB ROUTING
 
