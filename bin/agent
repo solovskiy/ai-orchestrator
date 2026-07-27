@@ -30,6 +30,8 @@ usage() {
   cat <<'EOF'
 agent — оркестрация CLI-агентов как фоновых задач
 
+  agent delegate --task <slug> --repo <path> [опции]  ОДИН вызов: start+wait+heal+result
+                                                       (запускать через Bash run_in_background)
   agent start   --task <slug> --repo <path> [опции]   запустить задачу (фон)
   agent chat    --task <slug> --repo <path> [опции]   интерактивный чат (foreground)
   agent list                                          все задачи
@@ -61,6 +63,10 @@ agent — оркестрация CLI-агентов как фоновых зад
                          deepseek/* → opencode, claude/* → claude, gemini/* → gemini)
   --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
   --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+
+Опции delegate:
+  (все опции start) + --timeout <сек>   таймаут ожидания (по умолч. 1800)
+                      --no-heal          не чинить провал автоматически
 
 Опции chat:
   --task <slug>          имя задачи (обязательно)
@@ -213,6 +219,57 @@ cmd_start() {
   [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
   echo "  следить: agent status $job_id  ·  ждать (в фоне!): agent wait $job_id"
   return 0
+}
+
+# Единая точка входа: start + wait + (при необходимости) один heal-ретрай +
+# result — одним вызовом. Рассчитан на запуск ЦЕЛИКОМ через
+# Bash(..., run_in_background: true): тогда харнесс сам уведомит по
+# завершении, а вызывающему (Claude) не нужно помнить о jobId/wait/heal
+# по отдельности — только capability/task/repo на входе и текст результата
+# на выходе. Принимает те же опции, что и `start` (--model/--verify/
+# --worktree/...), плюс свои: --timeout (передаётся в wait) и --no-heal
+# (не чинить провал автоматически, просто вернуть его как есть).
+cmd_delegate() {
+  local timeout=1800 no_heal=0
+  local start_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout) timeout="${2:-1800}"; shift 2 ;;
+      --no-heal) no_heal=1; shift ;;
+      *)         start_args+=("$1"); shift ;;
+    esac
+  done
+
+  local start_out job_id
+  start_out="$(cmd_start "${start_args[@]}")" || { echo "$start_out" >&2; return 1; }
+  job_id="$(head -n1 <<<"$start_out")"
+  echo "$start_out"
+
+  cmd_wait "$job_id" --timeout "$timeout"
+
+  local d
+  d="$(job_dir_of "$job_id")"
+
+  # heal сам решает по diagnosis.outcome, нужно ли чинить (no-op иначе) —
+  # exitCode==0 не гарантирует реальный успех (см. cmdFinalize в agent.js),
+  # поэтому нельзя полагаться на job.status здесь.
+  if [[ "$no_heal" == "0" ]]; then
+    local heal_out heal_job_id
+    heal_out="$(agent_js heal "$d")"
+    heal_job_id="$(head -n1 <<<"$heal_out")"
+    if [[ -d "$JOBS_DIR/$heal_job_id" ]]; then
+      echo ""
+      echo "$heal_out"
+      cmd_wait "$heal_job_id" --timeout "$timeout"
+      job_id="$heal_job_id"
+    else
+      echo "$heal_out"
+    fi
+  fi
+
+  echo ""
+  echo "=== результат ($job_id) ==="
+  cat "$JOBS_DIR/$job_id/result.md" 2>/dev/null || echo "(результата нет)"
 }
 
 cmd_chat() {
@@ -491,6 +548,7 @@ main() {
 
   local cmd="${1:-}"; shift || true
   case "$cmd" in
+    delegate) cmd_delegate "$@" ;;
     start)   cmd_start "$@" ;;
     chat)    cmd_chat "$@" ;;
     send)    cmd_send "$@" ;;
