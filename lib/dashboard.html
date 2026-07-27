@@ -341,20 +341,20 @@ async function loadSettings() {
   // Редактор (скрыт, показывается при клике)
   h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-  h += '<div><label>Модель</label><input type="text" id="ae-model"></div>';
-  h += '<div><label>Variant</label><select id="ae-variant">';
+  h += '<div><label title="Провайдер/модель: opencode/..., deepseek/..., claude/...">Модель ⓘ</label><input type="text" id="ae-model" title="Формат: provider/model. Примеры: deepseek/deepseek-v4-flash-free, deepseek/deepseek-v4-pro, opencode/gpt-5.1-codex"></div>';
+  h += '<div><label title="Уровень reasoning effort. Выше = умнее но дороже.">Variant ⓘ</label><select id="ae-variant" title="minimal — самый дешёвый, max — самый умный. medium для кода, high для ресёрча.">';
   for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
   h += '</select></div>';
-  h += '<div><label>Mode</label><select id="ae-mode"><option>primary</option><option>subagent</option><option>all</option></select></div>';
-  h += '<div><label>Temperature</label><input type="text" id="ae-temp" placeholder="0.2"></div>';
-  h += '<div><label>Worktree</label><select id="ae-worktree"><option value="1">да</option><option value="0">нет</option></select></div>';
-  h += '<div><label>Auto-commit</label><select id="ae-autocommit"><option value="1">да</option><option value="0">нет</option></select></div>';
-  h += '<div><label>Max Steps</label><input type="text" id="ae-maxsteps" placeholder="20"></div>';
-  h += '<div><label>Timeout (сек)</label><input type="text" id="ae-timeout" placeholder="1800"></div>';
+  h += '<div><label title="primary — в Tab-цикле opencode, subagent — только по @имени, all — везде">Mode ⓘ</label><select id="ae-mode" title="Где виден агент: primary (tab-цикл), subagent (только @упоминание), all (везде)"><option>primary</option><option>subagent</option><option>all</option></select></div>';
+  h += '<div><label title="Креативность ответов. 0 = строго по факту, 1 = максимально креативно.">Temperature ⓘ</label><input type="text" id="ae-temp" placeholder="0.2" title="0.0-1.0. Низкие значения (0-0.2) для кода и анализа, высокие (0.5-1.0) для креативных задач."></div>';
+  h += '<div><label title="Изолировать агента в отдельную git-ветку. Изменения не попадут в основную ветку без review.">Worktree ⓘ</label><select id="ae-worktree" title="Да — агент работает в изолированной git-ветке. Нет — прямо в репозитории. Для кода всегда да."><option value="1">да</option><option value="0">нет</option></select></div>';
+  h += '<div><label title="Автоматически закоммитить изменения в worktree, если агент забыл сделать git commit.">Auto-commit ⓘ</label><select id="ae-autocommit" title="Если агент забыл git commit — обёртка сделает это сама. Только для worktree-задач."><option value="1">да</option><option value="0">нет</option></select></div>';
+  h += '<div><label title="Максимальное количество шагов (итераций) агента. Защита от бесконечных циклов.">Max Steps ⓘ</label><input type="text" id="ae-maxsteps" placeholder="20" title="После N шагов агент остановится. Увеличь для сложных задач (30-50), уменьши для простых (5-10)."></div>';
+  h += '<div><label title="Таймаут ожидания (секунд). Если агент не завершится за это время — задача будет killed.">Timeout (сек) ⓘ</label><input type="text" id="ae-timeout" placeholder="1800" title="По умолчанию 1800 (30 мин). Для быстрых задач — 120-300, для длительных — до 3600."></div>';
   h += '</div>';
-  h += '<label>Description</label><input type="text" id="ae-desc">';
-  h += '<label>Permissions (через запятую: bash,read,edit,glob,grep,webfetch,websearch,task,skill)</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
-  h += '<label>System Prompt</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
+  h += '<label title="Краткое описание — когда использовать этого агента. Показывается в UI opencode.">Description ⓘ</label><input type="text" id="ae-desc" title="Одно предложение: что делает агент и когда его применять. Видно в opencode agent list.">';
+  h += '<label title="Какие инструменты разрешены агенту. Остальные — deny.">Permissions ⓘ</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep" title="Через запятую: bash, read, edit, glob, grep, webfetch, websearch, task, skill, lsp. Не перечисленные = deny.">';
+  h += '<label title="Системный промпт — определяет поведение агента. Пиши правила и ограничения.">System Prompt ⓘ</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px" title="Основные инструкции для агента. Пиши в стиле: 'You are a... Always: 1... 2...' Чем конкретнее — тем лучше."></textarea>';
   h += '<div style="margin-top:8px;display:flex;gap:8px">';
   h += '<button class="primary" onclick="saveAgent()">💾 Сохранить</button>';
   h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer">📥 Export .md</button>';
@@ -507,9 +507,9 @@ document.addEventListener('keydown', function(e) {
 // ===================================================================== TEST RUN
 
 async function testRun(name) {
-  showModal('<h3>Test Run: ' + esc(name) + '</h3>' +
-    '<label>Промпт</label><textarea id="tr-prompt" rows="3" style="width:100%">echo "hello from ' + esc(name) + '"</textarea>' +
-    '<label>Repo</label><input type="text" id="tr-repo" value=".">' +
+  showModal('<h3>▶ Test Run: ' + esc(name) + '</h3>' +
+    '<label title="Что сделать агенту. Короткий тестовый промпт.">Промпт ⓘ</label><textarea id="tr-prompt" rows="3" style="width:100%" title="Например: прочитай README.md и напиши краткое резюме. Или: создай файл hello.txt с текстом ok.">echo "hello from ' + esc(name) + '"</textarea>' +
+    '<label title="В каком репозитории работать. . = текущая директория. Можно указать полный путь.">Repo ⓘ</label><input type="text" id="tr-repo" value="." title="Путь к репозиторию, в котором агент будет работать. Для research — директория с проектом, для coding — репо с кодом.">' +
     '<div style="margin-top:8px;display:flex;gap:8px">' +
     '<button class="primary" onclick="doTestRun(\'' + name + '\')">Запустить</button>' +
     '<button onclick="closeModal()">Отмена</button></div>' +
