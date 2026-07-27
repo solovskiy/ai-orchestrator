@@ -70,6 +70,22 @@ button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: 
 .overlay.open { display: block; }
 .spark { display: flex; gap: 1px; margin: 8px 0; }
 .spark span { width: 6px; background: var(--accent); border-radius: 0 0 2px 2px; }
+/* animations */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
+.agent-card { transition: transform .15s, box-shadow .15s; }
+.agent-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+/* toast */
+.toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 16px; border-radius: 6px; font-size: 13px; color: #fff; animation: fadeIn .2s; max-width: 360px; }
+.toast.ok { background: var(--green); }
+.toast.err { background: var(--red); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* modal */
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: rgba(0,0,0,.4); z-index: 50; justify-content: center; align-items: center; }
+.modal.open { display: flex; }
+.modal .box { background: var(--card); border-radius: 10px; padding: 24px; width: 500px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+.modal .box h3 { margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -87,6 +103,10 @@ button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: 
 <main id="main"></main>
 <div class="overlay" id="overlay"></div>
 <div class="detail-panel" id="detail"></div>
+<div class="toast-container" id="toasts"></div>
+<div class="modal" id="modal">
+  <div class="box" id="modal-body"></div>
+</div>
 
 <script>
 const API = '';
@@ -297,15 +317,17 @@ async function loadSettings() {
   // Карточки агентов
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px">';
   for (const a of agents) {
-    const pulse = a.running > 0 ? '<span style="color:var(--green);font-size:11px">● ' + a.running + ' running</span>' : '<span style="color:var(--muted);font-size:11px">○ idle</span>';
+    const pulse = a.running > 0 ? '<span class="pulse" style="color:var(--green);font-size:11px">● ' + a.running + ' running</span>' : '<span style="color:var(--muted);font-size:11px">○ idle</span>';
     const tools = Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(', ');
-    h += '<div class="card" style="cursor:pointer" onclick="editAgent(\'' + esc(a.name) + '\')">';
+    h += '<div class="card agent-card" onclick="editAgent(\'' + esc(a.name) + '\')">';
     h += '<div style="display:flex;justify-content:space-between;align-items:center">';
     h += '<strong>' + esc(a.name) + '</strong> <span style="font-size:11px;color:var(--muted)">' + esc(a.mode) + '</span>';
     h += '</div>';
     h += '<div style="font-size:12px;color:var(--muted);margin:4px 0">' + esc(a.model.split('/').pop()) + ' · variant: ' + esc(a.variant || '---') + ' · worktree: ' + (a.worktree ? '✓' : '✗') + '</div>';
     h += '<div style="font-size:11px;color:var(--muted)">tools: ' + esc(tools.slice(0, 50)) + (tools.length > 50 ? '...' : '') + '</div>';
-    h += '<div style="margin-top:4px">' + pulse + '</div>';
+    h += '<div style="margin-top:4px;display:flex;justify-content:space-between;align-items:center">' + pulse;
+    h += '<span><button class="primary" style="font-size:11px;padding:2px 10px;margin:0" onclick="event.stopPropagation();testRun(\'' + esc(a.name) + '\')">▶ Run</button></span>';
+    h += '</div>';
     h += '</div>';
   }
   h += '</div>';
@@ -334,8 +356,9 @@ async function loadSettings() {
   h += '<label>Permissions (через запятую: bash,read,edit,glob,grep,webfetch,websearch,task,skill)</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
   h += '<label>System Prompt</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
   h += '<div style="margin-top:8px;display:flex;gap:8px">';
-  h += '<button class="primary" onclick="saveAgent()">Сохранить</button>';
-  h += '<button class="danger" onclick="deleteAgent()">Удалить</button>';
+  h += '<button class="primary" onclick="saveAgent()">💾 Сохранить</button>';
+  h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer">📥 Export .md</button>';
+  h += '<button class="danger" onclick="deleteAgent()">🗑 Удалить</button>';
   h += '<button onclick="document.getElementById(\'agent-editor\').style.display=\'none\'">Отмена</button>';
   h += '</div></div>';
 
@@ -349,9 +372,13 @@ async function loadSettings() {
 }
 
 async function editAgent(name) {
+  window._editingAgent = name;
   const a = await get('/api/agents/' + name);
   $('#agent-editor').style.display = 'block';
   $('#ae-name').textContent = name;
+  // update export button
+  const expBtn = $('#ae-export');
+  if (expBtn) expBtn.setAttribute('onclick', 'exportAgent(\'' + name + '\')');
   $('#ae-model').value = a.model || '';
   $('#ae-variant').value = a.variant || '';
   $('#ae-mode').value = a.mode || 'primary';
@@ -368,15 +395,15 @@ async function editAgent(name) {
 
 async function createAgent() {
   const name = $('#new-agent-name').value.trim();
-  if (!name) return alert('Введи имя');
+  if (!name) return toast('Введи имя', 'err');
   const r = await post('/api/agents/' + name, {
     name, model: 'opencode/deepseek-v4-flash-free', variant: 'medium',
     mode: 'primary', worktree: false, timeout: 1800, autoCommit: false,
     permissions: { bash: 'allow', read: 'allow', edit: 'allow', glob: 'allow', grep: 'allow' },
     systemPrompt: '', description: '',
   });
-  if (r.ok) { loadSettings(); }
-  else alert(r.error);
+  if (r.ok) { loadSettings(); toast('создан: ' + name); }
+  else toast(r.error, 'err');
 }
 
 async function saveAgent() {
@@ -400,8 +427,8 @@ async function saveAgent() {
     agent.permissions[p] = perms.includes(p) ? 'allow' : 'deny';
   }
   const r = await post('/api/agents/' + name, agent);
-  if (r.ok) { alert('сохранено: ' + name); loadSettings(); }
-  else alert(r.error);
+  if (r.ok) { toast('сохранено: ' + name); loadSettings(); }
+  else toast(r.error, 'err');
 }
 
 async function deleteAgent() {
@@ -409,8 +436,8 @@ async function deleteAgent() {
   if (!confirm('Удалить агента ' + name + '?')) return;
   const r = await fetch(API + '/api/agents/' + name, { method: 'DELETE' });
   const j = await r.json();
-  if (j.ok) { $('#agent-editor').style.display = 'none'; loadSettings(); }
-  else alert(j.error);
+  if (j.ok) { $('#agent-editor').style.display = 'none'; loadSettings(); toast('удалён: ' + name); }
+  else toast(j.error, 'err');
 }
 
 async function runCleanup() {
@@ -446,6 +473,75 @@ $$('nav button').forEach(b => {
 
 $('#overlay').addEventListener('click', closeDetail);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+// ===================================================================== TOAST
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || 'ok');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ===================================================================== MODAL
+
+function showModal(html) {
+  $('#modal-body').innerHTML = html;
+  $('#modal').classList.add('open');
+}
+function closeModal() {
+  $('#modal').classList.remove('open');
+}
+$('#modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ===================================================================== KEYBOARD
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { closeDetail(); closeModal(); }
+  if (e.ctrlKey && e.key === 's') { e.preventDefault(); const s = $('#ae-name'); if (s && s.textContent) saveAgent(); }
+});
+
+// ===================================================================== TEST RUN
+
+async function testRun(name) {
+  showModal('<h3>Test Run: ' + esc(name) + '</h3>' +
+    '<label>Промпт</label><textarea id="tr-prompt" rows="3" style="width:100%">echo "hello from ' + esc(name) + '"</textarea>' +
+    '<label>Repo</label><input type="text" id="tr-repo" value=".">' +
+    '<div style="margin-top:8px;display:flex;gap:8px">' +
+    '<button class="primary" onclick="doTestRun(\'' + name + '\')">Запустить</button>' +
+    '<button onclick="closeModal()">Отмена</button></div>' +
+    '<pre id="tr-output" style="margin-top:8px;display:none;max-height:300px;overflow:auto;font-size:11px"></pre>');
+}
+
+async function doTestRun(name) {
+  const prompt = $('#tr-prompt').value;
+  const repo = $('#tr-repo').value || '.';
+  const out = $('#tr-output');
+  out.style.display = 'block';
+  out.textContent = 'Выполняется...';
+  try {
+    const r = await fetch(API + '/api/agents/' + name + '/test-run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, repo }),
+    });
+    const j = await r.json();
+    out.textContent = j.output || j.error || 'empty';
+    if (j.ok) toast('Test run completed');
+    else toast('Test run failed: ' + (j.error || 'unknown'), 'err');
+  } catch(e) {
+    out.textContent = 'Error: ' + e.message;
+    toast('Test run error: ' + e.message, 'err');
+  }
+}
+
+// ===================================================================== EXPORT
+
+function exportAgent(name) {
+  window.open(API + '/api/agents/' + name + '/export', '_blank');
+}
 
 // init
 loadJobs();
