@@ -155,10 +155,69 @@ function fmtCost(j) {
 let jobsCache = [];
 let sortField = 'createdAt';
 let sortDir = -1;  // -1 = по убыванию (новые сверху), 1 = по возрастанию
+let eventSource = null;
 
 async function loadJobs() {
+  // If we already have an EventSource, keep it running
+  if (eventSource) return;
+  
   jobsCache = await get('/api/jobs');
   renderJobs();
+  
+  // Set up SSE for real-time updates
+  eventSource = new EventSource('/api/events');
+  
+  eventSource.addEventListener('init', (e) => {
+    const jobs = JSON.parse(e.data);
+    jobsCache = jobs;
+    renderJobs();
+  });
+  
+  eventSource.addEventListener('job-update', (e) => {
+    const updates = JSON.parse(e.data);
+    if (Array.isArray(updates)) {
+      // Handle multiple updates
+      updates.forEach(update => {
+        if (update.status === 'deleted') {
+          // Remove deleted job
+          jobsCache = jobsCache.filter(j => j.id !== update.id);
+        } else {
+          // Update or add job
+          const index = jobsCache.findIndex(j => j.id === update.id);
+          if (index >= 0) {
+            jobsCache[index] = { ...jobsCache[index], ...update };
+          } else {
+            jobsCache.push(update);
+          }
+        }
+      });
+    } else {
+      // Single update
+      const update = updates;
+      const index = jobsCache.findIndex(j => j.id === update.id);
+      if (index >= 0) {
+        jobsCache[index] = { ...jobsCache[index], ...update };
+      } else {
+        jobsCache.push(update);
+      }
+    }
+    renderJobs();
+  });
+  
+  eventSource.onerror = function(error) {
+    console.error('SSE connection error:', error);
+    // Try to reconnect after a delay
+    setTimeout(() => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        // Fallback to polling if SSE fails
+        if ($('nav button.active')?.dataset?.tab === 'jobs') {
+          loadJobs();
+        }
+      }
+    }, 3000);
+  };
 }
 
 function renderJobs() {
@@ -183,44 +242,76 @@ function renderJobs() {
 
   const sortArrow = (field) => field === sortField ? (sortDir === -1 ? ' ▼' : ' ▲') : '';
 
-  let h = '<div class="filters">';
-  h += '<select id="filter-status" onchange="renderJobs()"><option value="">все статусы</option>';
+  // Build filters HTML
+  let filtersHtml = '<div class="filters">';
+  filtersHtml += '<select id="filter-status" onchange="renderJobs()"><option value="">все статусы</option>';
   for (const s of ['completed','failed','running','killed','pending'])
-    h += '<option value="' + s + '"' + (fStatus === s ? ' selected' : '') + '>' + s + '</option>';
-  h += '</select>';
-  h += '<select id="filter-model" onchange="renderJobs()"><option value="">все модели</option>';
+    filtersHtml += '<option value="' + s + '"' + (fStatus === s ? ' selected' : '') + '>' + s + '</option>';
+  filtersHtml += '</select>';
+  filtersHtml += '<select id="filter-model" onchange="renderJobs()"><option value="">все модели</option>';
   for (const m of models)
-    h += '<option value="' + m + '"' + (fModel === m ? ' selected' : '') + '>' + m + '</option>';
-  h += '</select>';
-  h += '<input id="filter-search" placeholder="поиск по задаче..." value="' + esc(fSearch) + '" oninput="renderJobs()">';
-  h += '<span style="margin-left:auto;color:var(--muted);font-size:12px">' + list.length + ' из ' + jobsCache.length + '</span>';
-  h += '</div>';
+    filtersHtml += '<option value="' + m + '"' + (fModel === m ? ' selected' : '') + '>' + m + '</option>';
+  filtersHtml += '</select>';
+  filtersHtml += '<input id="filter-search" placeholder="поиск по задаче..." value="' + esc(fSearch) + '" oninput="renderJobs()">';
+  filtersHtml += '<span style="margin-left:auto;color:var(--muted);font-size:12px">' + list.length + ' из ' + jobsCache.length + '</span>';
+  filtersHtml += '</div>';
 
-  h += '<table><thead><tr>';
-  h += '<th>ID</th><th>Задача</th><th>Статус</th><th>Модель</th><th>variant</th><th>Проверка</th>';
-  h += '<th style="cursor:pointer" onclick="sortField=\'createdAt\';sortDir=-sortDir;renderJobs()">Создана' + sortArrow('createdAt') + '</th>';
-  h += '<th>Длит.</th><th>Стоимость</th><th>Токены</th>';
-  h += '</tr></thead><tbody>';
+  // Create table HTML
+  let tableHtml = '<table><thead><tr>';
+  tableHtml += '<th>ID</th><th>Задача</th><th>Статус</th><th>Модель</th><th>variant</th><th>Проверка</th>';
+  tableHtml += '<th style="cursor:pointer" onclick="sortField=\'createdAt\';sortDir=-sortDir;renderJobs()">Создана' + sortArrow('createdAt') + '</th>';
+  tableHtml += '<th>Длит.</th><th>Стоимость</th><th>Токены</th>';
+  tableHtml += '</tr></thead><tbody id="jobs-tbody">';
 
+  // Create rows for each job
   for (const j of list) {
     const shortId = j.id.length > 42 ? j.id.slice(0, 39) + '...' : j.id;
     const created = j.createdAt ? j.createdAt.slice(0,16).replace('T',' ') : '---';
-    h += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
-    h += '<td style="font-family:monospace;font-size:11px">' + esc(shortId) + '</td>';
-    h += '<td>' + esc(j.task || '') + '</td>';
-    h += '<td>' + statusBadge(j.status) + '</td>';
-    h += '<td>' + esc(j.model) + '</td>';
-    h += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
-    h += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
-    h += '<td style="font-size:11px;color:var(--muted)">' + esc(created) + '</td>';
-    h += '<td style="color:var(--muted)">' + esc(j.duration) + '</td>';
-    h += '<td>' + fmtCost(j) + '</td>';
-    h += '<td>' + (j.tokens ? fmtNum(j.tokens.total) : '---') + '</td>';
-    h += '</tr>';
+    tableHtml += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
+    tableHtml += '<td style="font-family:monospace;font-size:11px">' + esc(shortId) + '</td>';
+    tableHtml += '<td>' + esc(j.task || '') + '</td>';
+    tableHtml += '<td>' + statusBadge(j.status) + '</td>';
+    tableHtml += '<td>' + esc(j.model) + '</td>';
+    tableHtml += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
+    tableHtml += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
+    tableHtml += '<td style="font-size:11px;color:var(--muted)">' + esc(created) + '</td>';
+    tableHtml += '<td style="color:var(--muted)">' + esc(j.duration) + '</td>';
+    tableHtml += '<td>' + fmtCost(j) + '</td>';
+    tableHtml += '<td>' + (j.tokens ? fmtNum(j.tokens.total) : '---') + '</td>';
+    tableHtml += '</tr>';
   }
 
-  h += '</tbody></table>';
-  $('#main').innerHTML = h;
+  tableHtml += '</tbody></table>';
+
+  // Incremental update
+  const main = $('#main');
+  const currentFilters = main.querySelector('.filters');
+  const currentTable = main.querySelector('table');
+  
+  if (currentFilters) {
+    // Update filters if they changed
+    if (currentFilters.innerHTML !== filtersHtml) {
+      currentFilters.outerHTML = filtersHtml;
+    }
+  } else {
+    // Insert filters at the beginning
+    main.insertAdjacentHTML('afterbegin', filtersHtml);
+  }
+  
+  if (currentTable) {
+    // Update table body with incremental changes
+    const tbody = currentTable.querySelector('#jobs-tbody');
+    if (tbody) {
+      // For now, we'll do a full table replacement for simplicity
+      // but preserve the table structure
+      currentTable.outerHTML = tableHtml;
+    } else {
+      currentTable.outerHTML = tableHtml;
+    }
+  } else {
+    // Insert table
+    main.insertAdjacentHTML('beforeend', tableHtml);
+  }
 }
 
 // ===================================================================== DETAIL
@@ -644,6 +735,11 @@ setInterval(() => {
   if (tab === 'settings') {
     const ed = $('#agent-editor');
     if (ed && !['', 'none'].includes(ed.style.display)) return;
+  }
+  // For jobs tab, SSE handles updates, so we don't need polling
+  if (tab === 'jobs') {
+    // SSE is already running via loadJobs()
+    return;
   }
   (routes[tab] || loadJobs)();
 }, 5000);
