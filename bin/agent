@@ -30,6 +30,8 @@ usage() {
   cat <<'EOF'
 agent — оркестрация CLI-агентов как фоновых задач
 
+  agent delegate --task <slug> --repo <path> [опции]  ОДИН вызов: start+wait+heal+result
+                                                       (запускать через Bash run_in_background)
   agent start   --task <slug> --repo <path> [опции]   запустить задачу (фон)
   agent chat    --task <slug> --repo <path> [опции]   интерактивный чат (foreground)
   agent list                                          все задачи
@@ -53,14 +55,22 @@ agent — оркестрация CLI-агентов как фоновых зад
   --prompt-file <path>   ТЗ из файла
   --prompt <text>        ТЗ строкой
                          (если ни того ни другого — читается со stdin)
+  --capability <name>    research | coding — подставляет model/worktree из
+                         capabilities/<name>/capability.json (пока везде
+                         зашита бесплатная opencode/deepseek-v4-flash-free)
   --worktree             создать git worktree под задачу и работать в нём
   --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
   --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
   --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
                          (если не указан --runner, определяется автоматом:
-                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini)
+                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini;
+                         переопределяет модель из --capability)
   --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
   --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+
+Опции delegate:
+  (все опции start) + --timeout <сек>   таймаут ожидания (по умолч. 1800)
+                      --no-heal          не чинить провал автоматически
 
 Опции chat:
   --task <slug>          имя задачи (обязательно)
@@ -112,7 +122,7 @@ job_dir_of() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
-  local max_parallel="" force=0
+  local max_parallel="" force=0 capability=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -120,6 +130,7 @@ cmd_start() {
       --repo)        repo="${2:-}"; shift 2 ;;
       --prompt-file) prompt_file="${2:-}"; shift 2 ;;
       --prompt)      prompt_text="${2:-}"; shift 2 ;;
+      --capability)  capability="${2:-}"; shift 2 ;;
       --model)       model="${2:-}"; shift 2 ;;
       --verify)      verify="${2:-}"; shift 2 ;;
       --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
@@ -133,8 +144,24 @@ cmd_start() {
     esac
   done
 
-  # Дефолтная модель, если --model не задан: бесплатная OpenCode Zen.
-  # Переопределить — --model (для ресёрча: deepseek/deepseek-v4-pro).
+  # --capability <name>: подставляет дефолты (model, worktree) из
+  # capabilities/<name>/capability.json — явно переданные --model/--worktree
+  # приоритетнее и capability их не перезаписывает.
+  if [[ -n "$capability" ]]; then
+    local cap_file="$AI_HOME/capabilities/$capability/capability.json"
+    [[ -f "$cap_file" ]] || die "неизвестная capability: $capability (нет $cap_file)"
+    local cap_model cap_worktree
+    { IFS= read -r cap_model; IFS= read -r cap_worktree; } \
+      < <(agent_js capability "$capability") \
+      || die "capability: не удалось прочитать $capability"
+    [[ -n "$model" ]] || model="$cap_model"
+    if [[ "$cap_worktree" == "1" && "$make_worktree" == "0" ]]; then
+      make_worktree=1
+    fi
+  fi
+
+  # Дефолтная модель, если ни --model, ни --capability не заданы:
+  # бесплатная OpenCode Zen. Переопределить — --model.
   model="${model:-opencode/deepseek-v4-flash-free}"
 
   [[ -n "$task" ]] || die "--task обязателен"
@@ -213,6 +240,67 @@ cmd_start() {
   [[ -n "$verify" ]] && echo "  проверка после агента: $verify"
   echo "  следить: agent status $job_id  ·  ждать (в фоне!): agent wait $job_id"
   return 0
+}
+
+# Единая точка входа: start + wait + (при необходимости) один heal-ретрай +
+# result — одним вызовом. Рассчитан на запуск ЦЕЛИКОМ через
+# Bash(..., run_in_background: true): тогда харнесс сам уведомит по
+# завершении, а вызывающему (Claude) не нужно помнить о jobId/wait/heal
+# по отдельности — только capability/task/repo на входе и текст результата
+# на выходе. Принимает те же опции, что и `start` (--model/--verify/
+# --worktree/...), плюс свои: --timeout (передаётся в wait) и --no-heal
+# (не чинить провал автоматически, просто вернуть его как есть).
+cmd_delegate() {
+  local timeout=1800 no_heal=0
+  local start_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout) timeout="${2:-1800}"; shift 2 ;;
+      --no-heal) no_heal=1; shift ;;
+      *)         start_args+=("$1"); shift ;;
+    esac
+  done
+
+  local start_out job_id
+  start_out="$(cmd_start "${start_args[@]}")" || { echo "$start_out" >&2; return 1; }
+  job_id="$(head -n1 <<<"$start_out")"
+  echo "$start_out"
+
+  cmd_wait "$job_id" --timeout "$timeout"
+
+  local d
+  d="$(job_dir_of "$job_id")"
+
+  # heal сам решает по diagnosis.outcome, нужно ли чинить (no-op иначе) —
+  # exitCode==0 не гарантирует реальный успех (см. cmdFinalize в agent.js),
+  # поэтому нельзя полагаться на job.status здесь.
+  if [[ "$no_heal" == "0" ]]; then
+    local heal_out heal_job_id heal_rc=0
+    # agent_js heal имеет три исхода: (1) создал дочернюю задачу — код 0,
+    # первая строка stdout = её jobId; (2) чинить не нужно (outcome не
+    # подходит) — код 0, в stdout информационное сообщение, НЕ jobId;
+    # (3) не может починить (нет sessionId / уже healedAt / сессия занята
+    # другой задачей) — код 1, сообщение только в stderr, stdout пустой.
+    # Раньше пустой heal_job_id из случая (3) давал "$JOBS_DIR/" — каталог
+    # jobs/ сам по себе существует, это ложно трактовалось как успех и
+    # роняло весь `delegate` через cmd_wait "" → die. Различаем случаи и
+    # кодом возврата, и проверкой каталога — код 0 сам по себе не значит
+    # "получили jobId".
+    heal_out="$(agent_js heal "$d")" || heal_rc=$?
+    heal_job_id="$(head -n1 <<<"$heal_out")"
+    if [[ "$heal_rc" == "0" && -d "$JOBS_DIR/$heal_job_id" ]]; then
+      echo ""
+      echo "$heal_out"
+      cmd_wait "$heal_job_id" --timeout "$timeout"
+      job_id="$heal_job_id"
+    else
+      echo "$heal_out"
+    fi
+  fi
+
+  echo ""
+  echo "=== результат ($job_id) ==="
+  cat "$JOBS_DIR/$job_id/result.md" 2>/dev/null || echo "(результата нет)"
 }
 
 cmd_chat() {
@@ -491,6 +579,7 @@ main() {
 
   local cmd="${1:-}"; shift || true
   case "$cmd" in
+    delegate) cmd_delegate "$@" ;;
     start)   cmd_start "$@" ;;
     chat)    cmd_chat "$@" ;;
     send)    cmd_send "$@" ;;
