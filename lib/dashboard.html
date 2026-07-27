@@ -349,7 +349,7 @@ async function loadSettings() {
   // Редактор (скрыт, показывается при клике)
   h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-  h += '<div><label>Модель ' + tip('Выбери из списка или введи вручную. 🔄 — обновить список из opencode models.') + '</label><div style="display:flex;gap:4px"><input type="text" id="ae-model" list="models-list" style="flex:1"><button onclick="refreshModels();return false" title="Обновить список из opencode" style="padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:5px;cursor:pointer">🔄</button></div><datalist id="models-list"></datalist></div>';
+  h += '<div><label>Модель ' + tip('Выбери из списка или введи свою. 🔄 — обновить из opencode models.') + '</label><div style="display:flex;gap:4px"><select id="ae-model" onchange="onModelSelect()" style="flex:1"></select><button onclick="refreshModels();return false" title="Обновить список из opencode" style="padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:5px;cursor:pointer">🔄</button></div><input type="text" id="ae-model-custom" placeholder="или введи свою модель (provider/model)" style="display:none;margin-top:4px;width:100%"></div>';
   h += '<div><label>Variant ' + tip('Уровень reasoning: minimal, low, medium, high, max. Выше = умнее но дороже. medium для кода, high для ресёрча.') + '</label><select id="ae-variant">';
   for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
   h += '</select></div>';
@@ -387,14 +387,17 @@ async function editAgent(name) {
   // update export button
   const expBtn = $('#ae-export');
   if (expBtn) expBtn.setAttribute('onclick', 'exportAgent(\'' + name + '\')');
-  $('#ae-model').value = a.model || '';
-  // ensure model is in datalist
-  const dl = $('#models-list');
-  if (a.model && ![...dl.options].some(o => o.value === a.model)) {
+  // model: select or custom
+  const sel = $('#ae-model');
+  const customInput = $('#ae-model-custom');
+  if (a.model && sel && ![...sel.options].some(o => o.value === a.model)) {
+    // model not in list — add it
     const opt = document.createElement('option');
     opt.value = a.model; opt.textContent = a.model;
-    dl.appendChild(opt);
+    sel.insertBefore(opt, sel.options[sel.options.length - 1]); // before 'другая'
   }
+  if (sel) sel.value = a.model || (sel.options[0] ? sel.options[0].value : '');
+  onModelSelect();
   $('#ae-variant').value = a.variant || '';
   $('#ae-mode').value = a.mode || 'primary';
   $('#ae-temp').value = a.temperature != null ? a.temperature : '';
@@ -425,7 +428,7 @@ async function saveAgent() {
   const name = $('#ae-name').textContent;
   const agent = {
     name,
-    model: $('#ae-model').value,
+    model: $('#ae-model').value === '__custom__' ? ($('#ae-model-custom').value || '') : $('#ae-model').value,
     variant: $('#ae-variant').value || null,
     mode: $('#ae-mode').value,
     worktree: $('#ae-worktree').value === '1',
@@ -473,16 +476,50 @@ async function runCleanup() {
 async function refreshModels() {
   try {
     const r = await get('/api/models');
-    const dl = $('#models-list');
-    dl.innerHTML = '';
+    const sel = $('#ae-model');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '';
+    // группировка по провайдеру
+    const groups = {};
     for (const m of r.models) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.label || m.id;
-      dl.appendChild(opt);
+      if (!groups[m.provider]) groups[m.provider] = [];
+      groups[m.provider].push(m);
     }
-    toast('моделей загружено: ' + r.models.length + ' (' + r.source + ')');
+    for (const [prov, models] of Object.entries(groups).sort()) {
+      const og = document.createElement('optgroup');
+      og.label = prov;
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.label || m.id;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+    // опция для своей модели
+    const og = document.createElement('optgroup');
+    og.label = '──';
+    const custom = document.createElement('option');
+    custom.value = '__custom__';
+    custom.textContent = '▸ другая модель...';
+    og.appendChild(custom);
+    sel.appendChild(og);
+
+    if (cur && cur !== '__custom__') sel.value = cur;
+    toast('моделей: ' + r.models.length + ' (' + r.source + ')');
   } catch(e) { toast('ошибка загрузки моделей', 'err'); }
+}
+
+function onModelSelect() {
+  const sel = $('#ae-model');
+  const customInput = $('#ae-model-custom');
+  if (sel && sel.value === '__custom__') {
+    customInput.style.display = 'block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+  }
 }
 
 // preload models on settings page
