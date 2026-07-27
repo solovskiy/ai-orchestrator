@@ -19,6 +19,17 @@
     --row-hover: #1f2937; --card: #1f2937; --input-bg: #374151;
   }
 }
+
+/* xterm.js terminal styles */
+#terminal {
+  height: 300px;
+  background: var(--row-hover);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
@@ -95,6 +106,10 @@ label .tip { font-weight: normal; }
 .modal .box { background: var(--card); border-radius: 10px; padding: 24px; width: 500px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 .modal .box h3 { margin-bottom: 12px; }
 </style>
+
+<!-- xterm.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.css">
 </head>
 <body>
 <header>
@@ -119,8 +134,25 @@ label .tip { font-weight: normal; }
 <script>
 const API = '';
 
+// xterm.js initialization
+let terminalInstance = null;
+
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return document.querySelectorAll(sel); }
+
+function openTerminal(containerId, content) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (terminalInstance) {
+    terminalInstance.dispose();
+  }
+
+  terminalInstance = new Terminal();
+  terminalInstance.open(container);
+  terminalInstance.write(content);
+  terminalInstance.scrollToBottom();
+}
 
 async function get(url) {
   const r = await fetch(API + url);
@@ -247,20 +279,33 @@ async function openDetail(id) {
     h += '<div class="field"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>';
   }
 
-  if (d.resultMd) {
-    h += '<h4 style="margin-top:16px">Результат (result.md)</h4>';
-    h += '<pre>' + esc(d.resultMd.slice(0, 8000)) + (d.resultMd.length > 8000 ? '\n... (обрезано, всего ' + d.resultMd.length + ' симв.)' : '') + '</pre>';
-  }
-  if (d.verifyLogTail) {
-    h += '<h4 style="margin-top:16px">verify.log</h4>';
-    h += '<pre>' + esc(d.verifyLogTail) + '</pre>';
-  }
-  if (d.stderrTail) {
-    h += '<h4 style="margin-top:16px">stderr (последние 100 строк)</h4>';
-    h += '<pre>' + esc(d.stderrTail) + '</pre>';
+  if (d.resultMd || d.verifyLogTail || d.stderrTail) {
+    h += '<h4 style="margin-top:16px">Лог задачи (терминал)</h4>';
+    h += '<div id="terminal"></div>';
   }
 
   $('#detail').innerHTML = h;
+
+  if (d.resultMd || d.verifyLogTail || d.stderrTail) {
+    let logContent = '';
+    if (d.resultMd) {
+      logContent += '=== result.md ===\r\n' + d.resultMd.slice(0, 8000);
+      if (d.resultMd.length > 8000) {
+        logContent += '\r\n... (обрезано, всего ' + d.resultMd.length + ' симв.)\r\n';
+      }
+      logContent += '\r\n\r\n';
+    }
+    if (d.verifyLogTail) {
+      logContent += '=== verify.log ===\r\n' + d.verifyLogTail + '\r\n\r\n';
+    }
+    if (d.stderrTail) {
+      logContent += '=== stderr (последние 100 строк) ===\r\n' + d.stderrTail;
+    }
+
+    if (logContent) {
+      openTerminal('terminal', logContent.replace(/\r?\n/g, '\r\n'));
+    }
+  }
   $('#detail').classList.add('open');
   $('#overlay').classList.add('open');
 }
