@@ -21,17 +21,22 @@
 
 ## Быстрый старт
 
+Рекомендуемый вход — `delegate`: один вызов вместо `start`→`wait`→`result`,
+capability вместо имени модели. Запускать целиком через фоновый Bash
+(`run_in_background: true`) — так харнесс сам пришлёт уведомление о
+завершении.
+
 ```bash
-# запустить задачу в отдельном git worktree, с проверкой после агента
-# --worktree создаёт ЧИСТЫЙ checkout — node_modules и любые сгенерированные
-# файлы (Prisma-клиент и т.п.) в него не попадают. --verify должен сам
-# поднять окружение, иначе первый прогон гарантированно упадёт на "Cannot
-# find module" по всему проекту, а не только по файлам агента (см. раздел
-# «Проверка (--verify)» и «Перед --verify: окружение worktree» ниже).
-.ai/bin/agent start \
+# --capability coding подставляет model/worktree из
+# capabilities/coding/capability.json — сейчас это бесплатная
+# opencode/deepseek-v4-flash-free (см. «Capability» ниже).
+# --verify должен сам поднять окружение, иначе первый прогон в свежем
+# worktree гарантированно упадёт на "Cannot find module" по всему
+# проекту, а не только по файлам агента (см. «Перед --verify» ниже).
+.ai/bin/agent delegate \
   --task rozetka-ui \
   --repo /d/work/vodovorot/server/erp_core \
-  --worktree \
+  --capability coding \
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
 
@@ -40,16 +45,21 @@
 
 # детали одной
 .ai/bin/agent status rozetka-ui-20260726-140000
-
-# только итоговый ответ агента
-.ai/bin/agent result rozetka-ui-20260726-140000
 ```
+
+`delegate` уже печатает итоговый ответ агента в конце — отдельный `result`
+не нужен, но остаётся для точечного просмотра задачи, запущенной раньше.
+
+Нижний уровень (`start`+`wait`+`heal` по отдельности) никуда не делся —
+нужен, когда хочешь запустить несколько задач параллельно и не ждать
+каждую до конца одним вызовом.
 
 ## Команды
 
 | Команда | Назначение |
 |---|---|
-| `start` | запустить задачу в фоне (возвращает управление сразу) |
+| `delegate` | **рекомендуемый вход**: start + wait + (при необходимости) heal + result одним вызовом |
+| `start` | запустить задачу в фоне (возвращает управление сразу, без ожидания) |
 | `chat` | интерактивный чат с моделью (foreground) |
 | `send <id> "<текст>"` | продолжить сессию новой задачей |
 | `list` | таблица всех задач: модель, статус, проверка, время, стоимость |
@@ -58,7 +68,7 @@
 | `wait <id>...` | ждать завершения задач(и); запускать в фоне — даёт уведомление (см. `docs/workflow.md`) |
 | `result <id>` | только итоговый ответ |
 | `kill <id>` | остановить |
-| `heal <id>` | одноразовое автовосстановление проваленной задачи (`validation_error`/`abandoned`) — отправляет структурированное сообщение в сессию (см. `diagnosis.json`, поле `outcome`) |
+| `heal <id>` | одноразовое автовосстановление проваленной задачи (`validation_error`/`abandoned`) — отправляет структурированное сообщение в сессию (см. `diagnosis.json`, поле `outcome`); `delegate` вызывает это сам |
 | `clean [--days N]` | убрать задачи старше N дней (по умолч. 7) |
 | `remember <key> "<value>"` | запомнить факт в долговременную память |
 | `recall [<pattern>]` | найти факты по ключу/тегу/значению |
@@ -67,9 +77,33 @@
 
 Полный список опций — `agent --help`.
 
+## Capability
+
+`--capability <name>` (у `start` и `delegate`) подставляет `model`/`worktree`
+из `capabilities/<name>/capability.json` — вызывающий думает задачей
+(«research», «coding»), а не именем модели или раннером:
+
+| Capability | Файл | Сейчас |
+|---|---|---|
+| `research` | `capabilities/research/capability.json` | `opencode/deepseek-v4-flash-free`, без worktree |
+| `coding` | `capabilities/coding/capability.json` | `opencode/deepseek-v4-flash-free`, с worktree |
+
+Обе временно зашиты на бесплатную модель (см. `docs/workflow.md` — платный
+DeepSeek приостановлен). Явные `--model`/`--worktree` всегда побеждают
+capability — переопределить для конкретного вызова можно, не трогая файл:
+
+```bash
+.ai/bin/agent delegate --task deep-research --repo . \
+  --capability research --model deepseek/deepseek-v4-pro --prompt-file tz.md
+```
+
+Добавить новую capability — создать `capabilities/<name>/capability.json`
+с полями `model` (обязательно) и `worktree` (bool, по умолчанию `false`).
+
 ## Мультимодельность
 
-`--model` определяет исполнителя автоматически:
+Ниже уровня capability — модели по-прежнему определяют исполнителя
+автоматически через `--model`:
 
 | Префикс модели | Runner |
 |---|---|
@@ -80,10 +114,9 @@
 | `gemini/*` | gemini (Gemini CLI) |
 | `codex/*` | codex (Codex CLI) |
 
-Дефолт, если `--model` не задан — `opencode/deepseek-v4-flash-free`
-(OpenCode Zen, $0, без логина). Для ресёрча или высокой цены ошибки
-переопредели: `--model deepseek/deepseek-v4-pro`. Можно задать и раннер
-явно: `--runner opencode --model claude/sonnet-4`.
+Дефолт, если ни `--model`, ни `--capability` не заданы —
+`opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, без логина). Можно
+задать и раннер явно: `--runner opencode --model claude/sonnet-4`.
 
 ## Память
 
@@ -101,10 +134,11 @@
 
 ```
 .ai/
-  bin/agent              CLI: разбор аргументов, worktree, отсоединённый запуск
+  bin/agent              CLI: delegate, start, worktree, отсоединённый запуск
   lib/run-job.sh         обёртка, внутри которой живёт агент
   lib/agent.js           работа с JSON, разбор потока событий, вывод таблиц
   lib/runners/*.js       адаптеры исполнителей
+  capabilities/*/capability.json   дефолты model/worktree по задаче
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log
   scripts/               разовые обслуживающие скрипты
   research/              отчёты делегированных исследований

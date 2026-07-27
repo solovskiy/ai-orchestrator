@@ -11,24 +11,34 @@
 
 ## Быстрый старт
 
+Один вызов вместо start→wait→result. Запускать ЦЕЛИКОМ как фоновый
+Bash (`run_in_background: true`) — тогда харнесс сам пришлёт уведомление
+о завершении:
+
 ```bash
-# 1) запустить (возвращает jobId сразу). Модель по умолчанию — бесплатная
-#    opencode/deepseek-v4-flash-free; для ресёрча добавь --model deepseek/deepseek-v4-pro
-.ai/bin/agent start --task my-task --repo /path/to/project --prompt "сделай ..."
-# 2) ОБЯЗАТЕЛЬНО: ждать завершения — ОТДЕЛЬНЫМ Bash-вызовом с
-#    run_in_background, иначе уведомление о завершении не придёт
-.ai/bin/agent wait <jobId>
-# 3) забрать результат
-.ai/bin/agent result <jobId>
+# capability вместо имени модели — думай задачей, не раннером.
+# research/coding пока оба зашиты на бесплатную opencode/deepseek-v4-flash-free
+# (временно, см. docs/workflow.md); переопределить — --model.
+.ai/bin/agent delegate --task my-task --repo /path/to/project \
+  --capability research --prompt "сделай ..."
+
+.ai/bin/agent delegate --task my-task --repo /path/to/project \
+  --capability coding --verify "npm test" --prompt-file tz.md
 ```
+
+`delegate` сам делает start + wait + (при необходимости) один heal-ретрай +
+печатает итоговый результат. jobId/session/worktree — внутренняя кухня,
+их не нужно помнить руками. Нижнеуровневые `start`/`wait`/`heal` по
+отдельности остаются — для случаев, когда нужно параллельно запустить
+несколько задач и не блокироваться на каждой (см. `docs/workflow.md`).
 
 ## Критично (иначе тихие провалы)
 
 - **Не звать `opencode run` напрямую** — только через `agent`, иначе
   теряются job.json, статус, стоимость и возможность продолжить сессию.
-- **После `start` — всегда `agent wait <jobId>` в фоне.** `start`
-  отсоединён (nohup), харнесс о нём не знает; уведомление о завершении даёт
-  только `wait`, запущенный оркестратором через фоновый Bash.
+- **`delegate` — всегда одним фоновым Bash-вызовом** (`run_in_background:
+  true`). Без этого харнесс не отследит процесс и не пришлёт уведомление
+  о завершении — то же самое, что раньше требовало отдельного `wait`.
 - **`verify: passed` ≠ задача сделана.** Всегда сверять поле `changedFiles`
   в `agent status` / `git diff --stat`: пустой дифф при `passed` = агент
   ничего не тронул.
@@ -37,13 +47,15 @@
 
 ```
 .ai/
-  bin/agent           CLI (bash)
-  lib/agent.js        работа с JSON
-  lib/run-job.sh      обёртка фонового запуска
-  lib/runners/*.js    адаптеры: opencode, claude, gemini, codex
-  lib/models.json     маппинг model→runner
-  jobs/<id>/          состояние задач
-  memory/index.json   долговременная память
+  bin/agent              CLI (bash): delegate, start, wait, heal, ...
+  lib/agent.js            работа с JSON
+  lib/run-job.sh          обёртка фонового запуска
+  lib/runners/*.js        адаптеры: opencode, claude, gemini, codex
+  lib/models.json         маппинг model→runner
+  capabilities/*/capability.json   дефолты model/worktree по задаче
+                          (research, coding)
+  jobs/<id>/              состояние задач
+  memory/index.json       долговременная память
 ```
 
 ## Полные правила делегирования
