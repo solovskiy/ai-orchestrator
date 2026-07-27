@@ -78,7 +78,7 @@ button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: 
   <nav>
     <button data-tab="jobs" class="active">Задачи</button>
     <button data-tab="stats">Статистика</button>
-    <button data-tab="settings">Настройки</button>
+    <button data-tab="settings">Агенты</button>
   </nav>
   <span style="flex:1"></span>
   <span id="conn" style="font-size:11px;color:var(--green)">●</span>
@@ -291,44 +291,126 @@ function statCard(label, value) {
 // ===================================================================== SETTINGS
 
 async function loadSettings() {
-  const caps = await get('/api/capabilities');
-  let h = '<div class="card"><h3>Capabilities</h3>';
+  const agents = await get('/api/agents');
+  let h = '';
 
-  for (const [name, c] of Object.entries(caps)) {
-    h += '<div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">';
-    h += '<strong>' + esc(name) + '</strong>';
-    h += '<label>Модель</label><input type="text" id="cap-' + name + '-model" value="' + esc(c.model) + '">';
-    h += '<label>Variant</label><select id="cap-' + name + '-variant">';
-    for (const v of ['','minimal','low','medium','high','max'])
-      h += '<option value="' + v + '"' + ((c.variant || '') === v ? ' selected' : '') + '>' + (v || 'нет') + '</option>';
-    h += '</select>';
-    h += '<label>Worktree</label><select id="cap-' + name + '-worktree">';
-    h += '<option value="1"' + (c.worktree ? ' selected' : '') + '>да</option>';
-    h += '<option value="0"' + (!c.worktree ? ' selected' : '') + '>нет</option>';
-    h += '</select>';
-    h += '<br><button class="primary" onclick="saveCap(\'' + name + '\')">Сохранить ' + esc(name) + '</button>';
+  // Карточки агентов
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px">';
+  for (const a of agents) {
+    const pulse = a.running > 0 ? '<span style="color:var(--green);font-size:11px">● ' + a.running + ' running</span>' : '<span style="color:var(--muted);font-size:11px">○ idle</span>';
+    const tools = Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(', ');
+    h += '<div class="card" style="cursor:pointer" onclick="editAgent(\'' + esc(a.name) + '\')">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    h += '<strong>' + esc(a.name) + '</strong> <span style="font-size:11px;color:var(--muted)">' + esc(a.mode) + '</span>';
+    h += '</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin:4px 0">' + esc(a.model.split('/').pop()) + ' · variant: ' + esc(a.variant || '---') + ' · worktree: ' + (a.worktree ? '✓' : '✗') + '</div>';
+    h += '<div style="font-size:11px;color:var(--muted)">tools: ' + esc(tools.slice(0, 50)) + (tools.length > 50 ? '...' : '') + '</div>';
+    h += '<div style="margin-top:4px">' + pulse + '</div>';
     h += '</div>';
   }
   h += '</div>';
 
-  h += '<div class="card"><h3>Очистка</h3>';
-  h += '<p style="color:var(--muted);font-size:13px">Запустить worktree-gc --apply (только чистые + смердженные ветки) и clean --days 7.</p>';
-  h += '<button class="danger" onclick="runCleanup()">Очистить</button>';
-  h += '<pre id="cleanup-output" style="margin-top:8px;display:none"></pre>';
+  // Новый агент
+  h += '<div class="card"><h3>Создать агента</h3>';
+  h += '<input type="text" id="new-agent-name" placeholder="имя (латиница, дефисы)" style="width:200px;display:inline"> ';
+  h += '<button class="primary" onclick="createAgent()" style="margin-top:0">Создать</button>';
   h += '</div>';
+
+  // Редактор (скрыт, показывается при клике)
+  h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  h += '<div><label>Модель</label><input type="text" id="ae-model"></div>';
+  h += '<div><label>Variant</label><select id="ae-variant">';
+  for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
+  h += '</select></div>';
+  h += '<div><label>Mode</label><select id="ae-mode"><option>primary</option><option>subagent</option><option>all</option></select></div>';
+  h += '<div><label>Temperature</label><input type="text" id="ae-temp" placeholder="0.2"></div>';
+  h += '<div><label>Worktree</label><select id="ae-worktree"><option value="1">да</option><option value="0">нет</option></select></div>';
+  h += '<div><label>Auto-commit</label><select id="ae-autocommit"><option value="1">да</option><option value="0">нет</option></select></div>';
+  h += '<div><label>Max Steps</label><input type="text" id="ae-maxsteps" placeholder="20"></div>';
+  h += '<div><label>Timeout (сек)</label><input type="text" id="ae-timeout" placeholder="1800"></div>';
+  h += '</div>';
+  h += '<label>Description</label><input type="text" id="ae-desc">';
+  h += '<label>Permissions (через запятую: bash,read,edit,glob,grep,webfetch,websearch,task,skill)</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
+  h += '<label>System Prompt</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
+  h += '<div style="margin-top:8px;display:flex;gap:8px">';
+  h += '<button class="primary" onclick="saveAgent()">Сохранить</button>';
+  h += '<button class="danger" onclick="deleteAgent()">Удалить</button>';
+  h += '<button onclick="document.getElementById(\'agent-editor\').style.display=\'none\'">Отмена</button>';
+  h += '</div></div>';
+
+  // Очистка
+  h += '<div class="card"><h3>Очистка</h3>';
+  h += '<p style="color:var(--muted);font-size:13px">worktree-gc --apply + clean --days 7</p>';
+  h += '<button class="danger" onclick="runCleanup()">Очистить</button>';
+  h += '<pre id="cleanup-output" style="margin-top:8px;display:none"></pre></div>';
 
   $('#main').innerHTML = h;
 }
 
-async function saveCap(name) {
-  const model = $('#cap-' + name + '-model').value;
-  const variant = $('#cap-' + name + '-variant').value || null;
-  const worktree = $('#cap-' + name + '-worktree').value === '1';
-  try {
-    const r = await post('/api/capabilities/' + name, { model, variant, worktree });
-    if (r.ok) alert(name + ': сохранено');
-    else alert('Ошибка: ' + r.error);
-  } catch(e) { alert('Ошибка: ' + e.message); }
+async function editAgent(name) {
+  const a = await get('/api/agents/' + name);
+  $('#agent-editor').style.display = 'block';
+  $('#ae-name').textContent = name;
+  $('#ae-model').value = a.model || '';
+  $('#ae-variant').value = a.variant || '';
+  $('#ae-mode').value = a.mode || 'primary';
+  $('#ae-temp').value = a.temperature != null ? a.temperature : '';
+  $('#ae-worktree').value = a.worktree ? '1' : '0';
+  $('#ae-autocommit').value = a.autoCommit ? '1' : '0';
+  $('#ae-maxsteps').value = a.maxSteps || '';
+  $('#ae-timeout').value = a.timeout || '1800';
+  $('#ae-desc').value = a.description || '';
+  $('#ae-prompt').value = a.systemPrompt || '';
+  $('#ae-perms').value = a.permissions ? Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(',') : 'bash,read,edit,glob,grep';
+  $('#agent-editor').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function createAgent() {
+  const name = $('#new-agent-name').value.trim();
+  if (!name) return alert('Введи имя');
+  const r = await post('/api/agents/' + name, {
+    name, model: 'opencode/deepseek-v4-flash-free', variant: 'medium',
+    mode: 'primary', worktree: false, timeout: 1800, autoCommit: false,
+    permissions: { bash: 'allow', read: 'allow', edit: 'allow', glob: 'allow', grep: 'allow' },
+    systemPrompt: '', description: '',
+  });
+  if (r.ok) { loadSettings(); }
+  else alert(r.error);
+}
+
+async function saveAgent() {
+  const name = $('#ae-name').textContent;
+  const agent = {
+    name,
+    model: $('#ae-model').value,
+    variant: $('#ae-variant').value || null,
+    mode: $('#ae-mode').value,
+    worktree: $('#ae-worktree').value === '1',
+    autoCommit: $('#ae-autocommit').value === '1',
+    temperature: $('#ae-temp').value ? parseFloat($('#ae-temp').value) : undefined,
+    maxSteps: $('#ae-maxsteps').value ? parseInt($('#ae-maxsteps').value) : undefined,
+    timeout: parseInt($('#ae-timeout').value) || 1800,
+    description: $('#ae-desc').value,
+    systemPrompt: $('#ae-prompt').value,
+    permissions: {},
+  };
+  const perms = $('#ae-perms').value.split(',').map(s => s.trim()).filter(Boolean);
+  for (const p of ['bash','read','edit','glob','grep','webfetch','websearch','task','skill','lsp']) {
+    agent.permissions[p] = perms.includes(p) ? 'allow' : 'deny';
+  }
+  const r = await post('/api/agents/' + name, agent);
+  if (r.ok) { alert('сохранено: ' + name); loadSettings(); }
+  else alert(r.error);
+}
+
+async function deleteAgent() {
+  const name = $('#ae-name').textContent;
+  if (!confirm('Удалить агента ' + name + '?')) return;
+  const r = await fetch(API + '/api/agents/' + name, { method: 'DELETE' });
+  const j = await r.json();
+  if (j.ok) { $('#agent-editor').style.display = 'none'; loadSettings(); }
+  else alert(j.error);
 }
 
 async function runCleanup() {

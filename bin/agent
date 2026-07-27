@@ -54,6 +54,10 @@ agent — оркестрация CLI-агентов как фоновых зад
                                                        ЛЮБОЙ проект может вызывать делегирование)
   agent dashboard [--port N] [--open]                  локальный веб-дашборд (localhost:9191)
   agent cron-daily                                      ежедневная очистка (worktree-gc + clean)
+  agent agent list                                      список агентов (agents/*.json)
+  agent agent show <name>                               показать полный JSON агента
+  agent agent create <name>                             создать нового агента из шаблона
+  agent agent delete <name>                             удалить агента
 
 Опции start:
   --task <slug>          имя задачи (обязательно), участвует в jobId
@@ -725,6 +729,15 @@ main() {
     init)    cmd_init ;;
     dashboard) cmd_dashboard "$@" ;;
     cron-daily) cmd_cron_daily ;;
+    agent)
+      local sub="${1:-}"; shift || true
+      case "$sub" in
+        list)   agent_js agent-list "$(winpath "$AI_HOME/agents")" ;;
+        show)   agent_js agent-show "$(winpath "$AI_HOME/agents")" "${1:-}" ;;
+        create) agent_js agent-create "$(winpath "$AI_HOME/agents")" "${1:-}" ;;
+        delete) agent_js agent-delete "$(winpath "$AI_HOME/agents")" "${1:-}" ;;
+        *) die "agent agent: неизвестная подкоманда: $sub (list, show, create, delete)" ;;
+      esac ;;
     heal)    agent_js heal "$(job_dir_of "${1:-}")" ;;
     ""|-h|--help|help) usage ;;
     *) die "неизвестная команда: $cmd (agent --help)" ;;
