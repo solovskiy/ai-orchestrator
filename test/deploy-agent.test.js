@@ -77,6 +77,10 @@ test('yamlLine — экранирование звёздочки', () => {
   );
 });
 
+test('yamlLine — число 0 (не должно быть пропущено как falsy)', () => {
+  assert.strictEqual(yamlLine('port', 0, 0), 'port: 0');
+});
+
 test('yamlLine — c отступом (indent > 0)', () => {
   assert.strictEqual(
     yamlLine('read', 'allow', 1),
@@ -129,6 +133,13 @@ test('toYaml — вложенный объект с пропуском null во
   const y = toYaml(obj, 0);
   assert.ok(y.includes('bash: allow'));
   assert.ok(!y.includes('webfetch'));
+});
+
+test('toYaml — число 0 (не должно быть пропущено)', () => {
+  const obj = { timeout: 0, retries: 0 };
+  const y = toYaml(obj, 0);
+  assert.ok(y.includes('timeout: 0'));
+  assert.ok(y.includes('retries: 0'));
 });
 
 test('toYaml — boolean true в объекте', () => {
