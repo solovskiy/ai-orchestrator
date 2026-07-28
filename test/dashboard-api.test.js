@@ -1,7 +1,11 @@
 'use strict';
 const assert = require('node:assert');
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createServer } = require('../lib/dashboard.js');
+
+const AGENTS_DIR = path.join(__dirname, '..', 'agents');
 
 let passed = 0;
 let failed = 0;
@@ -131,6 +135,9 @@ async function runTests() {
   // ---------------------------------------------------------------- agent CRUD через API
 
   const testAgentName = 'test-api-temp';
+  const testAgentFile = path.join(AGENTS_DIR, testAgentName + '.json');
+
+  try {
 
   await test('POST /api/agents/:name — создаёт нового агента', async () => {
     const r = await req('POST', `/api/agents/${testAgentName}`, {
@@ -193,6 +200,13 @@ async function runTests() {
     const r = await req('DELETE', '/api/agents/nonexistent-xyz');
     assert.strictEqual(r.status, 404);
   });
+
+  } finally {
+    // cleanup напрямую через fs, в обход API — чтобы файл не остался
+    // в РЕАЛЬНОЙ agents/ проекта, даже если тест упал между create и delete
+    // (createServer() использует настоящий AGENTS_DIR, не временную директорию)
+    try { fs.unlinkSync(testAgentFile); } catch {}
+  }
 
   // ---------------------------------------------------------------- agent export
 
