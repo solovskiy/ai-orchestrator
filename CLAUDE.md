@@ -53,10 +53,15 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
   lib/diagnosis.js       классификация провалов
   lib/models.json        маппинг model→runner
   lib/runners/*.js       адаптеры: opencode, claude, gemini, codex
+  lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
   agents/*.json          определения агентов: model, variant, worktree,
                           permissions, systemPrompt (v3)
+  plugins/               кастомные инструменты для opencode (git_commit, etc.)
+  .opencode/
+    agents/              деплоированные агенты (генерируется)
+    plugins/             деплоированные плагины (генерируется)
+    opencode.json        конфиг opencode с путём к плагинам
   capabilities/*/        (устарело, миграция в agents/)
-  lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
   hooks/                 PreToolUse-хуки (напоминания о делегировании)
   test/                  юнит-тесты (diagnosis, diffStatusLines)
   scripts/               разовые обслуживающие скрипты

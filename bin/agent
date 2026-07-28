@@ -254,6 +254,27 @@ cmd_start() {
     fi
   fi
 
+  # Деплой плагинов в целевую директорию (.opencode/plugins/)
+  local plugins_src="$AI_HOME/plugins"
+  if [[ -d "$plugins_src" ]]; then
+    local plugins_dst="$cwd/.opencode/plugins"
+    mkdir -p "$plugins_dst" || true
+    # Копируем всё из plugins/ в .opencode/plugins/ (включая index.js и остальное)
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "$plugins_src/" "$plugins_dst/" 2>/dev/null || true
+    else
+      # Fallback на cp для систем без rsync
+      cp -r "$plugins_src"/* "$plugins_dst/" 2>/dev/null || true
+    fi
+  fi
+
+  # Деплой конфига opencode.json в целевую директорию
+  local opencode_config_src="$AI_HOME/.opencode/opencode.json"
+  if [[ -f "$opencode_config_src" ]]; then
+    mkdir -p "$cwd/.opencode" || true
+    cp "$opencode_config_src" "$cwd/.opencode/opencode.json" 2>/dev/null || true
+  fi
+
   # runner передаём, только если явно указан (иначе agent.js авто-определит)
   local runner_pair=""
   if (( runner_explicit )); then
@@ -651,6 +672,21 @@ cmd_init() {
       $NODE "$deployer" "$agents_dir" "$name" --target --global 2>/dev/null && count=$((count + 1))
     done
     echo "агентов установлено глобально: $count (→ ~/.config/opencode/agents/)"
+  fi
+
+  echo ""
+
+  # Глобальная установка плагинов в ~/.config/opencode/plugins/
+  local plugins_src="$AI_HOME/plugins"
+  if [[ -d "$plugins_src" ]]; then
+    local home_dir="${HOME}"
+    local plugins_dst="$home_dir/.config/opencode/plugins"
+    mkdir -p "$plugins_dst" || die "не удалось создать $plugins_dst"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "$plugins_src/" "$plugins_dst/" 2>/dev/null && echo "плагины установлены глобально: → ~/.config/opencode/plugins/"
+    else
+      cp -r "$plugins_src"/* "$plugins_dst/" 2>/dev/null && echo "плагины установлены глобально: → ~/.config/opencode/plugins/"
+    fi
   fi
 
   echo ""
