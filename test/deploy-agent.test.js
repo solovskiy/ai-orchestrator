@@ -1,5 +1,9 @@
 'use strict';
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const { yamlLine, toYaml, toOpenCodeMd } = require('../lib/deploy-agent.js');
 
 function test(desc, fn) {
@@ -262,6 +266,78 @@ test('toOpenCodeMd — permissions == null (не должны появиться
   const md = toOpenCodeMd(agent);
   assert.ok(!md.includes('permission'));
 });
+
+// ==================================================================== freshness-check (интеграционные)
+
+const DEPLOY_AGENT_JS = path.join(__dirname, '..', 'lib', 'deploy-agent.js');
+
+let tmpAgentsDir, tmpTargetDir;
+try {
+  tmpAgentsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-deploy-agent-json-'));
+  tmpTargetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-deploy-agent-target-'));
+} catch (e) {
+  console.error('не удалось создать временную директорию: ' + e.message);
+  process.exit(1);
+}
+
+// кладём валидный agents/<name>.json с минимальным набором полей
+const testAgentJson = {
+  name: 'freshness-test',
+  model: 'test/model',
+  systemPrompt: 'тестовый промпт\n',
+  permissions: { bash: 'allow', read: 'allow' },
+};
+fs.writeFileSync(path.join(tmpAgentsDir, 'freshness-test.json'), JSON.stringify(testAgentJson));
+
+function deploy(args) {
+  return execFileSync('node', [DEPLOY_AGENT_JS, ...args], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+test('freshness — первый запуск создаёт .md файл', () => {
+  const outFile = path.join(tmpTargetDir, '.opencode', 'agents', 'freshness-test.md');
+  assert.ok(!fs.existsSync(outFile), 'перед тестом .md не должен существовать');
+
+  const out = deploy([tmpAgentsDir, 'freshness-test', '--target', tmpTargetDir]);
+  assert.ok(out.includes('deploy-agent:'), `вывод должен содержать deploy-agent: ${out}`);
+  assert.ok(!out.includes('уже актуален'), 'первый запуск не должен выводить "уже актуален"');
+  assert.ok(fs.existsSync(outFile), '.md файл должен быть создан');
+});
+
+test('freshness — второй запуск без изменений пропускает запись', () => {
+  const outFile = path.join(tmpTargetDir, '.opencode', 'agents', 'freshness-test.md');
+  const mtimeBefore = fs.statSync(outFile).mtimeMs;
+
+  const out = deploy([tmpAgentsDir, 'freshness-test', '--target', tmpTargetDir]);
+  assert.ok(out.includes('уже актуален'), `вывод должен содержать "уже актуален": ${out}`);
+
+  const mtimeAfter = fs.statSync(outFile).mtimeMs;
+  assert.strictEqual(mtimeAfter, mtimeBefore, 'mtime .md не должен измениться при повторе');
+});
+
+test('freshness — после изменения .json .md перезаписывается', () => {
+  const outFile = path.join(tmpTargetDir, '.opencode', 'agents', 'freshness-test.md');
+  const mtimeBefore = fs.statSync(outFile).mtimeMs;
+
+  // «трогаем» jsonFile — ставим mtime на 10 секунд позже текущего
+  const jsonFile = path.join(tmpAgentsDir, 'freshness-test.json');
+  const now = new Date();
+  const later = new Date(now.getTime() + 10000);
+  fs.utimesSync(jsonFile, later, later);
+
+  const out = deploy([tmpAgentsDir, 'freshness-test', '--target', tmpTargetDir]);
+  assert.ok(!out.includes('уже актуален'),
+    `после изменения .json не должно быть "уже актуален": ${out}`);
+  assert.ok(out.includes('deploy-agent:'), `вывод должен содержать deploy-agent: ${out}`);
+
+  const mtimeAfter = fs.statSync(outFile).mtimeMs;
+  assert.ok(mtimeAfter > mtimeBefore, 'mtime .md должен измениться после перезаписи');
+});
+
+// ---------------------------------------------------------- cleanup
+try { fs.rmSync(tmpAgentsDir, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(tmpTargetDir, { recursive: true, force: true }); } catch {}
 
 // ==================================================================== итог
 
