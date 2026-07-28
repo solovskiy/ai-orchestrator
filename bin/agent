@@ -83,6 +83,9 @@ agent — оркестрация CLI-агентов как фоновых зад
 Опции delegate:
   (все опции start) + --timeout <сек>   таймаут ожидания (по умолч. 1800)
                       --no-heal          не чинить провал автоматически
+                                         (ни по outcome, ни по verify)
+                      --max-verify-retries <N>  сколько раз продолжать сессию
+                                         при красном --verify (по умолч. 2)
 
 Опции chat:
   --task <slug>          имя задачи (обязательно)
@@ -314,12 +317,13 @@ cmd_start() {
 # --worktree/...), плюс свои: --timeout (передаётся в wait) и --no-heal
 # (не чинить провал автоматически, просто вернуть его как есть).
 cmd_delegate() {
-  local timeout=1800 no_heal=0
+  local timeout=1800 no_heal=0 max_verify_retries="${AGENT_MAX_VERIFY_RETRIES:-2}"
   local start_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --timeout) timeout="${2:-1800}"; shift 2 ;;
       --no-heal) no_heal=1; shift ;;
+      --max-verify-retries) max_verify_retries="${2:-2}"; shift 2 ;;
       *)         start_args+=("$1"); shift ;;
     esac
   done
@@ -359,6 +363,33 @@ cmd_delegate() {
     else
       echo "$heal_out"
     fi
+  fi
+
+  # Провал самого агента (validation_error/abandoned) и провал verify —
+  # разные вещи: агент мог отработать штатно и что-то закоммитить, но
+  # тесты/линт красные. verify-heal продолжает ТУ ЖЕ сессию с хвостом
+  # verify.log, пока agent heal (выше) на verifyStatus не реагирует.
+  # Ограничено max_verify_retries, чтобы не уйти в бесконечный цикл, если
+  # агент не может починить проверку.
+  if [[ "$no_heal" == "0" ]]; then
+    while true; do
+      d="$(job_dir_of "$job_id")" || break
+      local vstatus; vstatus="$(agent_js get "$d" verifyStatus)"
+      [[ "$vstatus" == "failed" ]] || break
+
+      local vh_out vh_job_id vh_rc=0
+      vh_out="$(agent_js verify-heal "$d" "$max_verify_retries")" || vh_rc=$?
+      vh_job_id="$(head -n1 <<<"$vh_out")"
+      if [[ "$vh_rc" == "0" && -d "$JOBS_DIR/$vh_job_id" ]]; then
+        echo ""
+        echo "$vh_out"
+        cmd_wait "$vh_job_id" --timeout "$timeout"
+        job_id="$vh_job_id"
+      else
+        echo "$vh_out"
+        break
+      fi
+    done
   fi
 
   echo ""
@@ -472,13 +503,15 @@ cmd_send() {
     die "сессия $session уже выполняется в другой задаче — параллельное продолжение ОДНОЙ сессии ломает её историю. Дождись завершения (agent list) или останови ту задачу (agent kill)"
   fi
 
-  local task repo cwd runner model verify
+  local task repo cwd runner model verify worktree
   task="$(agent_js get "$src" task)"
   repo="$(agent_js get "$src" repo)"
   cwd="$(agent_js get "$src" cwd)"
   runner="$(agent_js get "$src" runner)"
   model="$(agent_js get "$src" model)"
   verify="$(agent_js get "$src" verifyCmd)"
+  worktree="$(agent_js get "$src" worktree)"
+  [[ "$worktree" == "1" || "$worktree" == "true" ]] && worktree=1 || worktree=0
 
   # Проверка лимита параллельных задач
   local running_count max_parallel_limit
@@ -498,7 +531,7 @@ cmd_send() {
 
   agent_js new "$job_dir" \
     "id=$job_id" "task=$task" "runner=$runner" "repo=$repo" "cwd=$cwd" \
-    "model=$model" "verifyCmd=$verify" \
+    "worktree=$worktree" "model=$model" "verifyCmd=$verify" \
     "sessionId=$session" "resume=true" "continuesJob=$id" \
     || die "не удалось создать job.json"
 
