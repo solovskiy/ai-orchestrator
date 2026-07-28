@@ -16,9 +16,9 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 о завершении:
 
 ```bash
-# capability вместо имени модели — думай задачей, не раннером.
-# research/coding пока оба зашиты на бесплатную opencode/deepseek-v4-flash-free
-# (временно, см. docs/workflow.md); переопределить — --model.
+# capability вместо имени модели — думай задачей, не раннером. Какая
+# модель сейчас за research/coding — не запоминать, настраивается в
+# agents/*.json/дашборде (см. docs/workflow.md); переопределить — --model.
 .ai/bin/agent delegate --task my-task --repo /path/to/project \
   --capability research --prompt "сделай ..."
 

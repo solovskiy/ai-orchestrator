@@ -27,9 +27,9 @@ capability вместо имени модели. Запускать целико
 завершении.
 
 ```bash
-# --agent coding подставляет model/worktree из
-# agents/coding.json — сейчас это бесплатная
-# opencode/deepseek-v4-flash-free (см. «Capability / Agent» ниже).
+# --agent coding подставляет model/worktree из agents/coding.json —
+# конкретную модель не запоминай, она настраивается в дашборде/JSON
+# и может смениться; актуальная — `agent agent show coding` (см. «Capability / Agent» ниже).
 # --verify должен сам поднять окружение, иначе первый прогон в свежем
 # worktree гарантированно упадёт на "Cannot find module" по всему
 # проекту, а не только по файлам агента (см. «Перед --verify» ниже).
@@ -95,10 +95,14 @@ capability вместо имени модели. Запускать целико
 и `delegate` подставляет model/worktree/variant/permissions/systemPrompt
 из `agents/<name>.json` — канонического JSON-формата `.ai`.
 
-| Агент | Файл | model | worktree | variant | permissions |
-|---|---|---|---|---|---|
-| `coding` | `agents/coding.json` | deepseek-v4-flash-free | да | medium | bash,read,edit,glob,grep |
-| `research` | `agents/research.json` | deepseek-v4-flash-free | нет | high | +webfetch,websearch |
+| Агент | Файл | worktree | variant | permissions |
+|---|---|---|---|---|
+| `coding` | `agents/coding.json` | да | medium | bash,read,edit,glob,grep,webfetch,websearch |
+| `research` | `agents/research.json` | нет | high | bash,read,edit,glob,grep,webfetch,websearch |
+
+Модель здесь намеренно не указана — настраивается в JSON/дашборде и
+меняется независимо от этого документа; актуальную смотреть через
+`agent agent show <name>` или `agent agent list`, не запоминать/хардкодить.
 
 `agent init` генерирует из JSON opencode-совместимые `.md` файлы в
 `~/.config/opencode/agents/` — после этого `opencode run --agent coding`
@@ -156,9 +160,13 @@ capability вместо имени модели. Запускать целико
                           worktree, permissions, systemPrompt)
   capabilities/*/        (устарело, миграция в agents/)
   lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
+  plugins/index.js       кастомные инструменты для opencode (git_commit)
+  .opencode/              конфиг + деплоенные агенты/плагины (генерируется)
   hooks/                 PreToolUse-хуки: напоминание о делегировании
   scripts/               разовые обслуживающие скрипты
-  test/                  юнит-тесты (diagnosis, diffStatusLines)
+  backups/               резервные копии
+  test/                  юнит-/интеграционные тесты (agent-crud, dashboard-api,
+                          deploy-agent, diagnosis, diffStatusLines, pad)
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
   memory/index.json      долговременная память (remember/recall)
   research/              отчёты делегированных исследований
@@ -249,9 +257,16 @@ worktree без установки зависимостей **упадёт на 
   - `prefer-ai-agent-over-subagent.js` — перехватывает вызов встроенного
     субагента Claude Code и предлагает использовать `.ai/bin/agent`
     (дешевле, изолированный контекст)
-- **`test/`** — юнит-тесты на чистой Node (без внешних зависимостей):
-  `diagnosis.test.js` (классификация исходов), `diff-status-lines.test.js`
-  (фильтрация изменений git diff с pre-status снимком)
+- **`test/`** — юнит-/интеграционные тесты на чистой Node (без внешних
+  зависимостей, `node test/<файл>.test.js`):
+  - `diagnosis.test.js` — классификация исходов задачи
+  - `diff-status-lines.test.js` — фильтрация изменений git diff с pre-status снимком
+  - `pad.test.js` — форматирование таблиц в CLI-выводе
+  - `deploy-agent.test.js` — JSON→YAML/markdown конвертация + freshness-check
+    (не перезаписывать `.md`, если он новее исходного `.json`)
+  - `agent-crud.test.js` — CLI create/list/show/delete для `agents/*.json`
+  - `dashboard-api.test.js` — HTTP API дашборда (`/api/jobs`, `/api/agents`,
+    `/api/stats` и т.д.), поднимает `createServer()` на случайном порту
 
 ## Написание ТЗ — обязательные правила
 

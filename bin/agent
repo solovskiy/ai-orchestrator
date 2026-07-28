@@ -65,12 +65,12 @@ agent — оркестрация CLI-агентов как фоновых зад
   --prompt-file <path>   ТЗ из файла
   --prompt <text>        ТЗ строкой
                          (если ни того ни другого — читается со stdin)
-  --capability <name>    research | coding — подставляет model/worktree из
-                         capabilities/<name>/capability.json (пока везде
-                         зашита бесплатная opencode/deepseek-v4-flash-free)
+  --capability <name>    research | coding (синоним --agent) — подставляет
+                         model/worktree из agents/<name>.json (v3; fallback —
+                         capabilities/<name>/capability.json, устарело)
   --worktree             создать git worktree под задачу и работать в нём
   --variant <level>      уровень усилия: minimal, low, medium, high, max
-                         (по умолчанию из capability.json; переопределяет)
+                         (по умолчанию из agents/<name>.json; переопределяет)
   --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
   --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
   --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
