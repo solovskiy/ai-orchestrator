@@ -233,6 +233,16 @@ async function runTests() {
     }
   });
 
+  await test('GET /api/jobs — содержит verifyCmd в объектах задач', async () => {
+    const r = await get('/api/jobs');
+    assert.strictEqual(r.status, 200);
+    assert.ok(Array.isArray(r.json), 'должен быть массивом');
+    if (r.json.length > 0) {
+      const j = r.json[0];
+      assert.ok('verifyCmd' in j, 'задача должна содержать поле verifyCmd');
+    }
+  });
+
   await test('GET /api/jobs/:id — 404 для несуществующей', async () => {
     const r = await get('/api/jobs/nonexistent-job-id-12345');
     assert.strictEqual(r.status, 404);

@@ -330,7 +330,7 @@ function renderJobs() {
     tableHtml += '<td>' + statusBadge(j.status, j.healthWarnings) + diagBadge(j.diagnosisOutcome, j.diagnosisError) + '</td>';
     tableHtml += '<td>' + esc(j.model) + '</td>';
     tableHtml += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
-    tableHtml += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : '---') + '</td>';
+    tableHtml += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : (j.verifyCmd ? '---' : 'не требуется')) + '</td>';
     tableHtml += '<td style="font-size:11px;color:var(--muted)">' + esc(created) + '</td>';
     tableHtml += '<td style="color:var(--muted)">' + esc(j.duration) + '</td>';
     tableHtml += '<td>' + fmtCost(j) + '</td>';
@@ -384,7 +384,7 @@ async function openDetail(id) {
     ['директория', d.cwd], ['сессия', d.sessionId],
     ['запущена', d.startedAt], ['длительность', fmtDuration(d.startedAt, d.finishedAt)],
     ['стоимость', fmtCost(d)], ['токены', d.tokens ? 'всего ' + fmtNum(d.tokens.total) + ' (вход ' + fmtNum(d.tokens.input) + ', выход ' + fmtNum(d.tokens.output) + ')' : '---'],
-    ['проверка', d.verifyCmd], ['результат проверки', d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')],
+    ['проверка', d.verifyCmd],     ['результат проверки', d.verifyCmd ? (d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')) : 'не требуется'],
     ['изменения', d.changedFiles != null ? d.changedFiles + ' файлов' + (d.diffStat ? ' (' + esc(d.diffStat) + ')' : '') : '---'],
     ['авто-коммит', d.autoCommitted != null ? (d.autoCommitted ? 'да (обёртка)' : 'нет') : '---'],
     ['ошибка', d.error],
