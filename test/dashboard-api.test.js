@@ -248,6 +248,64 @@ async function runTests() {
     assert.strictEqual(r.status, 404);
   });
 
+  // ---------------------------------------------------------------- kill / delete
+
+  await test('POST /api/jobs/:id/kill — 404 для несуществующей', async () => {
+    const r = await req('POST', '/api/jobs/nonexistent-kill-test/kill');
+    assert.strictEqual(r.status, 404);
+    assert.ok(r.json.error, 'должна быть ошибка');
+  });
+
+  await test('DELETE /api/jobs/:id — 404 для несуществующей', async () => {
+    const r = await req('DELETE', '/api/jobs/nonexistent-delete-test');
+    assert.strictEqual(r.status, 404);
+    assert.ok(r.json.error, 'должна быть ошибка');
+  });
+
+  // Создаём временную задачу, тестируем kill и delete
+  const tmpJobId = 'test-kill-delete-temp';
+  const tmpJobDir = path.join(__dirname, '..', 'jobs', tmpJobId);
+
+  try {
+    await test('POST /api/jobs/:id/kill — убивает задачу в статусе running', async () => {
+      // создаём временную задачу
+      fs.mkdirSync(tmpJobDir, { recursive: true });
+      const job = {
+        id: tmpJobId, task: 'test-kill-delete', status: 'running',
+        model: 'test/model', runner: 'test', pid: '99999',
+        createdAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(path.join(tmpJobDir, 'job.json'), JSON.stringify(job, null, 2) + '\n');
+
+      const r = await req('POST', '/api/jobs/' + tmpJobId + '/kill');
+      assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(r.json.status, 'killed');
+
+      // проверяем, что статус обновлён в файле
+      const updated = JSON.parse(fs.readFileSync(path.join(tmpJobDir, 'job.json'), 'utf8'));
+      assert.strictEqual(updated.status, 'killed');
+      assert.ok(updated.finishedAt, 'должен быть finishedAt');
+    });
+
+    await test('POST /api/jobs/:id/kill — 400 для задачи не в running', async () => {
+      const r = await req('POST', '/api/jobs/' + tmpJobId + '/kill');
+      assert.strictEqual(r.status, 400, `должен быть 400: ${r.body}`);
+      assert.ok(r.json.error, 'должна быть ошибка');
+    });
+
+    await test('DELETE /api/jobs/:id — удаляет задачу', async () => {
+      const r = await req('DELETE', '/api/jobs/' + tmpJobId);
+      assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+      assert.strictEqual(r.json.ok, true);
+      assert.ok(!fs.existsSync(tmpJobDir), 'директория задачи должна быть удалена');
+    });
+
+  } finally {
+    // cleanup на случай ошибки
+    try { fs.rmSync(tmpJobDir, { recursive: true, force: true }); } catch {}
+  }
+
   // ---------------------------------------------------------------- stats
 
   await test('GET /api/stats — возвращает агрегированную статистику', async () => {

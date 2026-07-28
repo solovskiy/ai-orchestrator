@@ -409,6 +409,16 @@ async function openDetail(id) {
     h += '<div id="terminal"></div>';
   }
 
+  // Action buttons: kill / delete
+  h += '<div style="margin-top:16px;display:flex;gap:8px">';
+  if (d.status === 'running') {
+    h += '<button class="danger" onclick="killJob(\'' + esc(d.id) + '\')">🧹 Убить задачу</button>';
+  }
+  if (d.status !== 'running') {
+    h += '<button class="danger" onclick="deleteJob(\'' + esc(d.id) + '\')">🗑 Удалить задачу</button>';
+  }
+  h += '</div>';
+
   $('#detail').innerHTML = h;
 
   if (d.resultMd || d.verifyLogTail || d.stderrTail) {
@@ -438,6 +448,38 @@ async function openDetail(id) {
 function closeDetail() {
   $('#detail').classList.remove('open');
   $('#overlay').classList.remove('open');
+}
+
+async function killJob(id) {
+  if (!confirm('Убить задачу ' + id + '? Процесс будет остановлен.')) return;
+  try {
+    const r = await fetch(API + '/api/jobs/' + id + '/kill', { method: 'POST' });
+    const j = await r.json();
+    if (j.ok) {
+      toast('Задача убита: ' + id);
+      closeDetail();
+    } else {
+      toast(j.error || 'Ошибка при убийстве задачи', 'err');
+    }
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+async function deleteJob(id) {
+  if (!confirm('Удалить задачу ' + id + '? Это действие необратимо.')) return;
+  try {
+    const r = await fetch(API + '/api/jobs/' + id, { method: 'DELETE' });
+    const j = await r.json();
+    if (j.ok) {
+      toast('Задача удалена: ' + id);
+      closeDetail();
+    } else {
+      toast(j.error || 'Ошибка при удалении задачи', 'err');
+    }
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
 }
 
 function fmtDuration(from, to) {
