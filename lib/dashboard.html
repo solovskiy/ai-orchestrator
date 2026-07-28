@@ -85,6 +85,10 @@ button.primary { padding: 8px 20px; background: var(--accent); color: #fff; bord
 button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
 .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: rgba(0,0,0,.3); z-index: 9; }
 .overlay.open { display: block; }
+.pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; }
+.pagination button { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-size: 13px; }
+.pagination button:disabled { opacity: 0.4; cursor: default; }
+.pagination span { font-size: 13px; color: var(--muted); }
 .spark { display: flex; gap: 1px; margin: 8px 0; }
 .spark span { width: 6px; background: var(--accent); border-radius: 0 0 2px 2px; }
 /* animations */
@@ -213,12 +217,19 @@ let jobsCache = [];
 let sortField = 'createdAt';
 let sortDir = -1;  // -1 = по убыванию (новые сверху), 1 = по возрастанию
 let eventSource = null;
+let pageSize = 50;
+let currentOffset = 0;
+let totalJobs = 0;
 
 async function loadJobs() {
   // If we already have an EventSource, keep it running
   if (eventSource) return;
   
-  jobsCache = await get('/api/jobs');
+  // Initial fetch: get first page for immediate display
+  const data = await get('/api/jobs?limit=' + pageSize + '&offset=0');
+  jobsCache = data.jobs || data;
+  totalJobs = data.total || jobsCache.length;
+  currentOffset = 0;
   renderJobs();
   
   // Set up SSE for real-time updates
@@ -227,6 +238,8 @@ async function loadJobs() {
   eventSource.addEventListener('init', (e) => {
     const jobs = JSON.parse(e.data);
     jobsCache = jobs;
+    totalJobs = jobs.length;
+    currentOffset = 0;
     renderJobs();
   });
   
@@ -258,6 +271,7 @@ async function loadJobs() {
         jobsCache.push(update);
       }
     }
+    totalJobs = jobsCache.length;
     renderJobs();
   });
   
@@ -295,6 +309,13 @@ function renderJobs() {
     return sortDir * va.localeCompare(vb);
   });
 
+  // pagination slice
+  const filteredTotal = list.length;
+  if (currentOffset >= filteredTotal && filteredTotal > 0) {
+    currentOffset = Math.max(0, filteredTotal - pageSize);
+  }
+  const pageItems = list.slice(currentOffset, currentOffset + pageSize);
+
   const models = [...new Set(jobsCache.map(j => j.model))].sort();
 
   const sortArrow = (field) => field === sortField ? (sortDir === -1 ? ' ▼' : ' ▲') : '';
@@ -320,8 +341,8 @@ function renderJobs() {
   tableHtml += '<th>Длит.</th><th>Стоимость</th><th>Токены</th>';
   tableHtml += '</tr></thead><tbody id="jobs-tbody">';
 
-  // Create rows for each job
-  for (const j of list) {
+  // Create rows for each job on current page
+  for (const j of pageItems) {
     const shortId = j.id.length > 42 ? j.id.slice(0, 39) + '...' : j.id;
     const created = j.createdAt ? j.createdAt.slice(0,16).replace('T',' ') : '---';
     tableHtml += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
@@ -340,35 +361,59 @@ function renderJobs() {
 
   tableHtml += '</tbody></table>';
 
+  // pagination controls
+  const totalPages = Math.ceil(filteredTotal / pageSize) || 1;
+  const currentPage = Math.floor(currentOffset / pageSize) + 1;
+  const prevDisabled = currentOffset <= 0;
+  const nextDisabled = currentOffset + pageSize >= filteredTotal;
+  let pagHtml = '<div class="pagination">';
+  pagHtml += '<button onclick="prevPage()"' + (prevDisabled ? ' disabled' : '') + '>← новее</button>';
+  pagHtml += '<span>' + currentPage + ' из ' + totalPages + '</span>';
+  pagHtml += '<button onclick="nextPage()"' + (nextDisabled ? ' disabled' : '') + '>старее →</button>';
+  pagHtml += '</div>';
+
   // Incremental update
   const main = $('#main');
   const currentFilters = main.querySelector('.filters');
   const currentTable = main.querySelector('table');
-  
+  const currentPagination = main.querySelector('.pagination');
+
   if (currentFilters) {
-    // Update filters if they changed
     if (currentFilters.innerHTML !== filtersHtml) {
       currentFilters.outerHTML = filtersHtml;
     }
   } else {
-    // Insert filters at the beginning
     main.insertAdjacentHTML('afterbegin', filtersHtml);
   }
-  
+
   if (currentTable) {
-    // Update table body with incremental changes
-    const tbody = currentTable.querySelector('#jobs-tbody');
-    if (tbody) {
-      // For now, we'll do a full table replacement for simplicity
-      // but preserve the table structure
-      currentTable.outerHTML = tableHtml;
-    } else {
-      currentTable.outerHTML = tableHtml;
-    }
+    currentTable.outerHTML = tableHtml;
   } else {
-    // Insert table
     main.insertAdjacentHTML('beforeend', tableHtml);
   }
+
+  // Update or insert pagination after the table
+  if (currentPagination) {
+    currentPagination.outerHTML = pagHtml;
+  } else {
+    const tbl = main.querySelector('table');
+    if (tbl) {
+      tbl.insertAdjacentHTML('afterend', pagHtml);
+    } else {
+      main.insertAdjacentHTML('beforeend', pagHtml);
+    }
+  }
+}
+
+function prevPage() {
+  if (currentOffset <= 0) return;
+  currentOffset = Math.max(0, currentOffset - pageSize);
+  renderJobs();
+}
+
+function nextPage() {
+  currentOffset += pageSize;
+  renderJobs();
 }
 
 // ===================================================================== DETAIL
@@ -409,6 +454,16 @@ async function openDetail(id) {
     h += '<div id="terminal"></div>';
   }
 
+  // Action buttons: kill / delete
+  h += '<div style="margin-top:16px;display:flex;gap:8px">';
+  if (d.status === 'running') {
+    h += '<button class="danger" onclick="killJob(\'' + esc(d.id) + '\')">🧹 Убить задачу</button>';
+  }
+  if (d.status !== 'running') {
+    h += '<button class="danger" onclick="deleteJob(\'' + esc(d.id) + '\')">🗑 Удалить задачу</button>';
+  }
+  h += '</div>';
+
   $('#detail').innerHTML = h;
 
   if (d.resultMd || d.verifyLogTail || d.stderrTail) {
@@ -440,6 +495,38 @@ function closeDetail() {
   $('#overlay').classList.remove('open');
 }
 
+async function killJob(id) {
+  if (!confirm('Убить задачу ' + id + '? Процесс будет остановлен.')) return;
+  try {
+    const r = await fetch(API + '/api/jobs/' + id + '/kill', { method: 'POST' });
+    const j = await r.json();
+    if (j.ok) {
+      toast('Задача убита: ' + id);
+      closeDetail();
+    } else {
+      toast(j.error || 'Ошибка при убийстве задачи', 'err');
+    }
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+async function deleteJob(id) {
+  if (!confirm('Удалить задачу ' + id + '? Это действие необратимо.')) return;
+  try {
+    const r = await fetch(API + '/api/jobs/' + id, { method: 'DELETE' });
+    const j = await r.json();
+    if (j.ok) {
+      toast('Задача удалена: ' + id);
+      closeDetail();
+    } else {
+      toast(j.error || 'Ошибка при удалении задачи', 'err');
+    }
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
 function fmtDuration(from, to) {
   if (!from || !to) return '---';
   const d = new Date(to) - new Date(from);
@@ -463,8 +550,8 @@ async function loadStats() {
   h += statCard('Стоимость', '$' + (a.cost || 0).toFixed(4));
   h += '</div>';
 
-  // by capability
-  h += '<div class="card"><h3>По типу задач</h3><table><thead><tr><th>Тип</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
+  // by agent
+  h += '<div class="card"><h3>По агентам</h3><table><thead><tr><th>Агент</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
   for (const [cap, d] of Object.entries(s.byCapability || {})) {
     h += '<tr><td>' + esc(cap) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
   }

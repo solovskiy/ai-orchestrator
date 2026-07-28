@@ -136,10 +136,11 @@ async function runTests() {
 
   const testAgentName = 'test-api-temp';
   const testAgentFile = path.join(AGENTS_DIR, testAgentName + '.json');
+  const testAgentMd = path.join(AGENTS_DIR, '..', '.opencode', 'agents', testAgentName + '.md');
 
   try {
 
-  await test('POST /api/agents/:name — создаёт нового агента', async () => {
+  await test('POST /api/agents/:name — создаёт нового агента и деплоит .md', async () => {
     const r = await req('POST', `/api/agents/${testAgentName}`, {
       name: testAgentName,
       description: 'API-тестовый агент',
@@ -155,6 +156,15 @@ async function runTests() {
     assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
     assert.strictEqual(r.json.ok, true);
     assert.strictEqual(r.json.name, testAgentName);
+    assert.strictEqual(r.json.deployed, true, 'должен быть авто-деплой .md');
+
+    // .md файл должен существовать
+    assert.ok(fs.existsSync(testAgentMd), `должен существовать ${testAgentMd}`);
+    const md = fs.readFileSync(testAgentMd, 'utf8');
+    assert.ok(md.startsWith('---'), 'должен быть YAML frontmatter');
+    assert.ok(md.includes('description: API-тестовый агент'), 'должен быть description');
+    assert.ok(md.includes('model: deepseek/deepseek-v4-flash'), 'должна быть модель');
+    assert.ok(md.endsWith('Тестовый промпт.\n'), 'должен быть systemPrompt в теле');
   });
 
   await test('GET /api/agents/:name — читает только что созданного', async () => {
@@ -202,10 +212,11 @@ async function runTests() {
   });
 
   } finally {
-    // cleanup напрямую через fs, в обход API — чтобы файл не остался
+    // cleanup напрямую через fs, в обход API — чтобы файлы не остались
     // в РЕАЛЬНОЙ agents/ проекта, даже если тест упал между create и delete
     // (createServer() использует настоящий AGENTS_DIR, не временную директорию)
     try { fs.unlinkSync(testAgentFile); } catch {}
+    try { fs.unlinkSync(testAgentMd); } catch {}
   }
 
   // ---------------------------------------------------------------- agent export
@@ -221,12 +232,15 @@ async function runTests() {
 
   // ---------------------------------------------------------------- jobs (данные из реальной jobs/)
 
-  await test('GET /api/jobs — возвращает массив задач', async () => {
+  await test('GET /api/jobs — возвращает объект с jobs и total', async () => {
     const r = await get('/api/jobs');
     assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.json), 'должен быть массивом');
-    if (r.json.length > 0) {
-      const j = r.json[0];
+    assert.ok(r.json, 'должен быть ответ');
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    assert.strictEqual(typeof r.json.total, 'number', 'total должен быть числом');
+    assert.ok(r.json.total >= r.json.jobs.length, 'total >= jobs.length');
+    if (r.json.jobs.length > 0) {
+      const j = r.json.jobs[0];
       assert.ok(j.id, 'задача должна иметь id');
       assert.ok(j.status, 'задача должна иметь status');
       assert.ok(j.createdAt, 'задача должна иметь createdAt');
@@ -236,17 +250,117 @@ async function runTests() {
   await test('GET /api/jobs — содержит verifyCmd в объектах задач', async () => {
     const r = await get('/api/jobs');
     assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.json), 'должен быть массивом');
-    if (r.json.length > 0) {
-      const j = r.json[0];
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    if (r.json.jobs.length > 0) {
+      const j = r.json.jobs[0];
       assert.ok('verifyCmd' in j, 'задача должна содержать поле verifyCmd');
     }
+  });
+
+  await test('GET /api/jobs?limit=5 — возвращает не больше limit задач', async () => {
+    const r = await get('/api/jobs?limit=5');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 5, 'не больше 5 задач');
+    assert.ok(typeof r.json.total === 'number', 'total есть');
+  });
+
+  await test('GET /api/jobs?limit=5&offset=0 — offset работает', async () => {
+    const r1 = await get('/api/jobs?limit=5&offset=0');
+    const r2 = await get('/api/jobs?limit=5&offset=5');
+    assert.strictEqual(r1.status, 200);
+    assert.strictEqual(r2.status, 200);
+    // If there are at least 10 jobs, the pages should have different jobs
+    if (r1.json.total >= 10) {
+      const ids1 = r1.json.jobs.map(j => j.id);
+      const ids2 = r2.json.jobs.map(j => j.id);
+      const overlap = ids1.filter(id => ids2.includes(id));
+      assert.strictEqual(overlap.length, 0, 'страницы не должны пересекаться');
+    }
+  });
+
+  await test('GET /api/jobs — лимит по умолчанию 50', async () => {
+    const r = await get('/api/jobs');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 50, 'по умолчанию не больше 50');
+    assert.ok(r.json.total >= r.json.jobs.length, 'total >= jobs.length');
+  });
+
+  await test('GET /api/jobs?limit=0 — некорректный limit сбрасывается на 50', async () => {
+    const r = await get('/api/jobs?limit=0');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 50, 'limit=0 даёт не больше 50');
+  });
+
+  await test('GET /api/jobs?offset=9999 — offset больше total даёт пустой массив', async () => {
+    const r = await get('/api/jobs?offset=9999');
+    assert.strictEqual(r.status, 200);
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    assert.strictEqual(r.json.jobs.length, 0, 'пустой массив при offset > total');
+    assert.ok(typeof r.json.total === 'number', 'total всё ещё число');
   });
 
   await test('GET /api/jobs/:id — 404 для несуществующей', async () => {
     const r = await get('/api/jobs/nonexistent-job-id-12345');
     assert.strictEqual(r.status, 404);
   });
+
+  // ---------------------------------------------------------------- kill / delete
+
+  await test('POST /api/jobs/:id/kill — 404 для несуществующей', async () => {
+    const r = await req('POST', '/api/jobs/nonexistent-kill-test/kill');
+    assert.strictEqual(r.status, 404);
+    assert.ok(r.json.error, 'должна быть ошибка');
+  });
+
+  await test('DELETE /api/jobs/:id — 404 для несуществующей', async () => {
+    const r = await req('DELETE', '/api/jobs/nonexistent-delete-test');
+    assert.strictEqual(r.status, 404);
+    assert.ok(r.json.error, 'должна быть ошибка');
+  });
+
+  // Создаём временную задачу, тестируем kill и delete
+  const tmpJobId = 'test-kill-delete-temp';
+  const tmpJobDir = path.join(__dirname, '..', 'jobs', tmpJobId);
+
+  try {
+    await test('POST /api/jobs/:id/kill — убивает задачу в статусе running', async () => {
+      // создаём временную задачу
+      fs.mkdirSync(tmpJobDir, { recursive: true });
+      const job = {
+        id: tmpJobId, task: 'test-kill-delete', status: 'running',
+        model: 'test/model', runner: 'test', pid: '99999',
+        createdAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(path.join(tmpJobDir, 'job.json'), JSON.stringify(job, null, 2) + '\n');
+
+      const r = await req('POST', '/api/jobs/' + tmpJobId + '/kill');
+      assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(r.json.status, 'killed');
+
+      // проверяем, что статус обновлён в файле
+      const updated = JSON.parse(fs.readFileSync(path.join(tmpJobDir, 'job.json'), 'utf8'));
+      assert.strictEqual(updated.status, 'killed');
+      assert.ok(updated.finishedAt, 'должен быть finishedAt');
+    });
+
+    await test('POST /api/jobs/:id/kill — 400 для задачи не в running', async () => {
+      const r = await req('POST', '/api/jobs/' + tmpJobId + '/kill');
+      assert.strictEqual(r.status, 400, `должен быть 400: ${r.body}`);
+      assert.ok(r.json.error, 'должна быть ошибка');
+    });
+
+    await test('DELETE /api/jobs/:id — удаляет задачу', async () => {
+      const r = await req('DELETE', '/api/jobs/' + tmpJobId);
+      assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+      assert.strictEqual(r.json.ok, true);
+      assert.ok(!fs.existsSync(tmpJobDir), 'директория задачи должна быть удалена');
+    });
+
+  } finally {
+    // cleanup на случай ошибки
+    try { fs.rmSync(tmpJobDir, { recursive: true, force: true }); } catch {}
+  }
 
   // ---------------------------------------------------------------- stats
 
