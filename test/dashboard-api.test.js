@@ -221,12 +221,15 @@ async function runTests() {
 
   // ---------------------------------------------------------------- jobs (данные из реальной jobs/)
 
-  await test('GET /api/jobs — возвращает массив задач', async () => {
+  await test('GET /api/jobs — возвращает объект с jobs и total', async () => {
     const r = await get('/api/jobs');
     assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.json), 'должен быть массивом');
-    if (r.json.length > 0) {
-      const j = r.json[0];
+    assert.ok(r.json, 'должен быть ответ');
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    assert.strictEqual(typeof r.json.total, 'number', 'total должен быть числом');
+    assert.ok(r.json.total >= r.json.jobs.length, 'total >= jobs.length');
+    if (r.json.jobs.length > 0) {
+      const j = r.json.jobs[0];
       assert.ok(j.id, 'задача должна иметь id');
       assert.ok(j.status, 'задача должна иметь status');
       assert.ok(j.createdAt, 'задача должна иметь createdAt');
@@ -236,11 +239,53 @@ async function runTests() {
   await test('GET /api/jobs — содержит verifyCmd в объектах задач', async () => {
     const r = await get('/api/jobs');
     assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.json), 'должен быть массивом');
-    if (r.json.length > 0) {
-      const j = r.json[0];
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    if (r.json.jobs.length > 0) {
+      const j = r.json.jobs[0];
       assert.ok('verifyCmd' in j, 'задача должна содержать поле verifyCmd');
     }
+  });
+
+  await test('GET /api/jobs?limit=5 — возвращает не больше limit задач', async () => {
+    const r = await get('/api/jobs?limit=5');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 5, 'не больше 5 задач');
+    assert.ok(typeof r.json.total === 'number', 'total есть');
+  });
+
+  await test('GET /api/jobs?limit=5&offset=0 — offset работает', async () => {
+    const r1 = await get('/api/jobs?limit=5&offset=0');
+    const r2 = await get('/api/jobs?limit=5&offset=5');
+    assert.strictEqual(r1.status, 200);
+    assert.strictEqual(r2.status, 200);
+    // If there are at least 10 jobs, the pages should have different jobs
+    if (r1.json.total >= 10) {
+      const ids1 = r1.json.jobs.map(j => j.id);
+      const ids2 = r2.json.jobs.map(j => j.id);
+      const overlap = ids1.filter(id => ids2.includes(id));
+      assert.strictEqual(overlap.length, 0, 'страницы не должны пересекаться');
+    }
+  });
+
+  await test('GET /api/jobs — лимит по умолчанию 50', async () => {
+    const r = await get('/api/jobs');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 50, 'по умолчанию не больше 50');
+    assert.ok(r.json.total >= r.json.jobs.length, 'total >= jobs.length');
+  });
+
+  await test('GET /api/jobs?limit=0 — некорректный limit сбрасывается на 50', async () => {
+    const r = await get('/api/jobs?limit=0');
+    assert.strictEqual(r.status, 200);
+    assert.ok(r.json.jobs.length <= 50, 'limit=0 даёт не больше 50');
+  });
+
+  await test('GET /api/jobs?offset=9999 — offset больше total даёт пустой массив', async () => {
+    const r = await get('/api/jobs?offset=9999');
+    assert.strictEqual(r.status, 200);
+    assert.ok(Array.isArray(r.json.jobs), 'jobs должен быть массивом');
+    assert.strictEqual(r.json.jobs.length, 0, 'пустой массив при offset > total');
+    assert.ok(typeof r.json.total === 'number', 'total всё ещё число');
   });
 
   await test('GET /api/jobs/:id — 404 для несуществующей', async () => {
