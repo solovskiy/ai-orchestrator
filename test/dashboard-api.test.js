@@ -136,10 +136,11 @@ async function runTests() {
 
   const testAgentName = 'test-api-temp';
   const testAgentFile = path.join(AGENTS_DIR, testAgentName + '.json');
+  const testAgentMd = path.join(AGENTS_DIR, '..', '.opencode', 'agents', testAgentName + '.md');
 
   try {
 
-  await test('POST /api/agents/:name — создаёт нового агента', async () => {
+  await test('POST /api/agents/:name — создаёт нового агента и деплоит .md', async () => {
     const r = await req('POST', `/api/agents/${testAgentName}`, {
       name: testAgentName,
       description: 'API-тестовый агент',
@@ -155,6 +156,15 @@ async function runTests() {
     assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
     assert.strictEqual(r.json.ok, true);
     assert.strictEqual(r.json.name, testAgentName);
+    assert.strictEqual(r.json.deployed, true, 'должен быть авто-деплой .md');
+
+    // .md файл должен существовать
+    assert.ok(fs.existsSync(testAgentMd), `должен существовать ${testAgentMd}`);
+    const md = fs.readFileSync(testAgentMd, 'utf8');
+    assert.ok(md.startsWith('---'), 'должен быть YAML frontmatter');
+    assert.ok(md.includes('description: API-тестовый агент'), 'должен быть description');
+    assert.ok(md.includes('model: deepseek/deepseek-v4-flash'), 'должна быть модель');
+    assert.ok(md.endsWith('Тестовый промпт.\n'), 'должен быть systemPrompt в теле');
   });
 
   await test('GET /api/agents/:name — читает только что созданного', async () => {
@@ -202,10 +212,11 @@ async function runTests() {
   });
 
   } finally {
-    // cleanup напрямую через fs, в обход API — чтобы файл не остался
+    // cleanup напрямую через fs, в обход API — чтобы файлы не остались
     // в РЕАЛЬНОЙ agents/ проекта, даже если тест упал между create и delete
     // (createServer() использует настоящий AGENTS_DIR, не временную директорию)
     try { fs.unlinkSync(testAgentFile); } catch {}
+    try { fs.unlinkSync(testAgentMd); } catch {}
   }
 
   // ---------------------------------------------------------------- agent export
