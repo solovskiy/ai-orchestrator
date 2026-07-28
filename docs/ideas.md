@@ -67,11 +67,10 @@ agent list/show/create/delete. Покрыть: чтение несуществу
 
 ## 🔹 Мелкие оптимизации
 
-### Системный промпт coding — упомянуть авто-коммит
-Модель пишет «не закоммитил, не было инструкций», хотя `run-job.sh` спасает.
-Добавить в `agents/coding.json` systemPrompt: «Changes are auto-committed
-by the wrapper after you finish, but prefer to commit your own changes
-with descriptive messages during the session.»
+### ~~Системный промпт coding — упомянуть авто-коммит~~ (сделано, `d5f3fc4`)
+Решено иначе, чем предполагалось: вместо упоминания auto-commit обёрткой
+агенту дан инструмент `git_commit` (`plugins/index.js`) — коммитит сам,
+явным шагом 5 в systemPrompt (`agents/coding.json`).
 
 ### Deploy-agent — проверка freshness
 Каждый `delegate` вызывает deploy-agent заново, даже если агент не менялся.

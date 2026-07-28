@@ -384,7 +384,7 @@ async function openDetail(id) {
     ['директория', d.cwd], ['сессия', d.sessionId],
     ['запущена', d.startedAt], ['длительность', fmtDuration(d.startedAt, d.finishedAt)],
     ['стоимость', fmtCost(d)], ['токены', d.tokens ? 'всего ' + fmtNum(d.tokens.total) + ' (вход ' + fmtNum(d.tokens.input) + ', выход ' + fmtNum(d.tokens.output) + ')' : '---'],
-    ['проверка', d.verifyCmd],     ['результат проверки', d.verifyCmd ? (d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')) : 'не требуется'],
+    ['проверка', d.verifyCmd], ['результат проверки', d.verifyCmd ? (d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')) : 'не требуется'],
     ['изменения', d.changedFiles != null ? d.changedFiles + ' файлов' + (d.diffStat ? ' (' + esc(d.diffStat) + ')' : '') : '---'],
     ['авто-коммит', d.autoCommitted != null ? (d.autoCommitted ? 'да (обёртка)' : 'нет') : '---'],
     ['ошибка', d.error],
