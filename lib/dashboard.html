@@ -162,8 +162,13 @@ function openTerminal(containerId, content) {
   terminalInstance.scrollToBottom();
 }
 
-async function get(url) {
-  const r = await fetch(API + url);
+async function get(url, opts) {
+  opts = opts || {};
+  var finalUrl = API + url;
+  if (opts.nocache) {
+    finalUrl += (finalUrl.indexOf('?') >= 0 ? '&' : '?') + '_t=' + Date.now();
+  }
+  const r = await fetch(finalUrl);
   if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
   return r.json();
 }
@@ -654,7 +659,9 @@ async function loadSettings() {
 
 async function editAgent(name) {
   window._editingAgent = name;
-  const a = await get('/api/agents/' + name);
+  // всегда свежий запрос, без кэша браузера — защита от устаревших данных
+  const a = await get('/api/agents/' + name, { nocache: true });
+  window._agentMtime = a._mtime; // для защиты от stale-записи при save
   $('#agent-editor').style.display = 'block';
   $('#ae-name').textContent = name;
   // update export button
@@ -722,14 +729,27 @@ async function saveAgent() {
     description: $('#ae-desc').value,
     systemPrompt: $('#ae-prompt').value,
     permissions: {},
+    // защита от stale-записи: сервер проверит, что файл не менялся с момента
+    // открытия формы, и вернёт 409 если менялся
+    _loadedAt: window._agentMtime,
   };
   const perms = $('#ae-perms').value.split(',').map(s => s.trim()).filter(Boolean);
   for (const p of ['bash','read','edit','glob','grep','webfetch','websearch','task','skill','lsp']) {
     agent.permissions[p] = perms.includes(p) ? 'allow' : 'deny';
   }
   const r = await post('/api/agents/' + name, agent);
-  if (r.ok) { toast('сохранено: ' + name); loadSettings(); }
-  else toast(r.error, 'err');
+  if (r.ok) { toast('сохранено: ' + name); loadSettings(); return; }
+
+  // 409 Conflict — файл изменился с момента открытия формы
+  if (r.error && r.error.indexOf('изменился с момента открытия') >= 0) {
+    toast('⚠ Конфликт: файл изменился с момента открытия. Обновляю форму...', 'err');
+    // перезагружаем актуальные данные с сервера, форму не закрываем —
+    // пользователь увидит свежие значения и сможет сохранить снова
+    try { await editAgent(name); } catch(e) { toast('Не удалось обновить: ' + e.message, 'err'); }
+    return;
+  }
+
+  toast(r.error, 'err');
 }
 
 async function deleteAgent() {
