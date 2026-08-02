@@ -161,27 +161,33 @@ cmd_start() {
     esac
   done
 
-  # --agent/--capability <name>: читает agents/<name>.json (v3),
-  # при отсутствии — fallback на capabilities/<name>/capability.json (v2).
-  # Явные --model/--worktree/--variant приоритетнее.
+  # --agent/--capability <name>: читает конфиг агента из дашборда
+  # (AI_DASHBOARD_URL), при недоступности — локальный файл
+  # agents/<name>.json. Явные --model/--worktree/--variant приоритетнее.
   if [[ -n "$capability" ]]; then
-    local agent_json="$AI_HOME/agents/$capability.json"
-    local cap_file="$AI_HOME/capabilities/$capability/capability.json"
-
     local cap_model="" cap_worktree="" cap_variant="" cap_runner=""
 
-    if [[ -f "$agent_json" ]]; then
-      # v3: agents/<name>.json (канонический формат)
-      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; } \
-        < <(agent_js agent-read "$agent_json") \
-        || die "agent: не удалось прочитать $agent_json"
-    elif [[ -f "$cap_file" ]]; then
-      # v2: capabilities/<name>/capability.json (обратная совместимость, нет поля runner)
-      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
-        < <(agent_js capability "$capability") \
-        || die "capability: не удалось прочитать $capability"
+    # Try dashboard first → local agents/<name>.json (v3)
+    # agent-read при недоступности и дашборда, и локального файла падает с
+    # кодом ошибки — тогда пробуем capabilities/<name>/capability.json (v2).
+    local read_ok=0
+    local read_output
+    if read_output="$(agent_js agent-read "$capability" 2>/dev/null)"; then
+      read_ok=1
+      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; } <<< "$read_output"
     else
-      die "неизвестный агент/capability: $capability (нет ни $agent_json, ни $cap_file)"
+      local cap_file="$AI_HOME/capabilities/$capability/capability.json"
+      if [[ -f "$cap_file" ]]; then
+        read_ok=1
+        # v2: capabilities/<name>/capability.json (обратная совместимость, нет поля runner)
+        { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
+          < <(agent_js capability "$capability") \
+          || die "capability: не удалось прочитать $capability"
+      fi
+    fi
+
+    if (( ! read_ok )); then
+      die "неизвестный агент/capability: $capability (нет в дашборде (${AI_DASHBOARD_URL:-http://localhost:9191}), нет agents/$capability.json, нет capabilities/$capability/capability.json)"
     fi
 
     [[ -n "$model" ]] || model="$cap_model"
