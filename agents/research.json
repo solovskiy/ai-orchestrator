@@ -1,6 +1,6 @@
 {
   "name": "research",
-  "model": "opencode/deepseek-v4-flash-free",
+  "model": "opencode/deepseek-v4-pro",
   "variant": "high",
   "mode": "primary",
   "worktree": false,
