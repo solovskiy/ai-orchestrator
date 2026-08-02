@@ -92,7 +92,12 @@ if [[ "$IS_WORKTREE" == "1" && -n "$(cd "$CWD" && git status --porcelain 2>/dev/
     echo "Job: $(jget id)"
     echo "Модель сама не закомітила зміни — закомічено обгорткою run-job.sh."
   } > "$MSG_FILE"
-  if ( cd "$CWD" && git add -A && git commit -F "$MSG_FILE" ) >/dev/null 2>&1; then
+  # ':!.opencode/agents' — виключає роль-файл, який deploy-agent.js сам
+  # генерує в кожному ворктрі (lib/deploy-agent.js) і який ніколи не
+  # трекається в main цільових репозиторіїв; інакше кожен авто-коміт тягне
+  # цей файл, і оркестратор не може змерджити гілку агента напряму —
+  # доводиться cherry-pick лише робочого коміту (помічено 2026-08-03).
+  if ( cd "$CWD" && git add -A -- . ':!.opencode/agents' && git commit -F "$MSG_FILE" ) >/dev/null 2>&1; then
     jset "autoCommitted=true"
   else
     jset "autoCommitted=false"

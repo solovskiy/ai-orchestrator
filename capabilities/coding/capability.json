@@ -2,5 +2,5 @@
   "model": "opencode/deepseek-v4-flash-free",
   "worktree": true,
   "variant": "medium",
-  "_note": "coding: medium variant — 56% экономии токенов vs max при том же качестве (effortmining benchmark). Переопределить: --variant high"
+  "_note": "v2-фолбэк формат (устарел, см. bin/agent --help) — используется, только если agents/coding.json отсутствует. Модель/runner теперь настраиваются через дашборд в agents/coding.json — поле 'model' здесь может не совпадать с фактически используемой моделью, не полагаться на него как на источник правды. variant medium: 56% экономии токенов vs max при том же качестве (effortmining benchmark)."
 }
