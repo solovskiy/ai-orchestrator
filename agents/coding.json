@@ -1,6 +1,7 @@
 {
   "name": "coding",
-  "model": "deepseek/deepseek-v4-pro",
+  "runner": "",
+  "model": "opencode-go/deepseek-v4-pro",
   "variant": "medium",
   "mode": "primary",
   "worktree": true,
