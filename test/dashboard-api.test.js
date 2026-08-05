@@ -412,6 +412,112 @@ async function runTests() {
     try { fs.rmSync(tmpJobDir, { recursive: true, force: true }); } catch {}
   }
 
+  // ---------------------------------------------------------------- session-log
+
+  const sessJobId = 'test-session-log';
+  const sessJobDir = path.join(__dirname, '..', 'jobs', sessJobId);
+
+  try {
+
+  await test('GET /api/jobs/:id/session-log — валидный out.jsonl возвращает шаги', async () => {
+    // Создаём временную задачу с out.jsonl
+    fs.mkdirSync(sessJobDir, { recursive: true });
+    const job = {
+      id: sessJobId, task: 'test-session-log', status: 'completed',
+      model: 'test/model', runner: 'test', pid: '88888',
+      createdAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(sessJobDir, 'job.json'), JSON.stringify(job, null, 2) + '\n');
+
+    // Пишем валидный out.jsonl с несколькими tool_use, step_finish строками
+    const now = Date.now();
+    const outLines = [
+      JSON.stringify({ type: 'tool_use', timestamp: now, sessionID: 's1', part: { type: 'tool', tool: 'read', title: 'read file.txt', state: { status: 'completed', input: { filePath: '/tmp/file.txt' }, output: 'hello world', time: { start: now, end: now + 100 }, title: 'read file.txt' } } }),
+      JSON.stringify({ type: 'tool_use', timestamp: now + 200, sessionID: 's1', part: { type: 'tool', tool: 'bash', title: 'npm test', state: { status: 'completed', input: { command: 'npm test', workdir: '.' }, output: 'All tests passed!', time: { start: now + 200, end: now + 5000 }, title: 'npm test' } } }),
+      JSON.stringify({ type: 'step_finish', timestamp: now + 6000, sessionID: 's1', part: { id: 'f1', reason: 'tool-calls', type: 'step-finish', tokens: { total: 5000, input: 3000, output: 2000, reasoning: 0 }, cost: 0.004160833 } }),
+      JSON.stringify({ type: 'tool_use', timestamp: now + 7000, sessionID: 's1', part: { type: 'tool', tool: 'write', title: 'write foo.js', state: { status: 'completed', input: { filePath: '/tmp/foo.js' }, output: '', time: { start: now + 7000, end: now + 7100 }, title: 'write foo.js' } } }),
+      JSON.stringify({ type: 'step_start', timestamp: now + 8000, sessionID: 's1', part: { id: 's2', type: 'step-start' } }),
+    ];
+    fs.writeFileSync(path.join(sessJobDir, 'out.jsonl'), outLines.join('\n') + '\n');
+
+    const r = await get('/api/jobs/' + sessJobId + '/session-log');
+    assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+    assert.ok(r.json.steps, 'должен быть массив steps');
+    assert.ok(Array.isArray(r.json.steps), 'steps должен быть массивом');
+    assert.ok(r.json.steps.length >= 4, `должно быть минимум 4 шага (step_start может быть опционален): ${r.json.steps.length}`);
+    assert.strictEqual(typeof r.json.totalSteps, 'number', 'totalSteps должен быть числом');
+    assert.strictEqual(typeof r.json.truncated, 'boolean', 'truncated должен быть boolean');
+
+    // Проверяем первый tool_use
+    const toolUses = r.json.steps.filter(s => s.type === 'tool_use');
+    assert.ok(toolUses.length >= 3, `должно быть минимум 3 tool_use: ${toolUses.length}`);
+    const read = toolUses.find(s => s.tool === 'read');
+    assert.ok(read, 'должен быть tool_use read');
+    assert.strictEqual(read.tool, 'read');
+    assert.strictEqual(read.title, 'read file.txt');
+    assert.strictEqual(read.status, 'completed');
+    assert.ok(read.input.filePath, 'должен быть input.filePath');
+    assert.strictEqual(read.output, 'hello world');
+    assert.ok(typeof read.durationMs === 'number', 'durationMs должен быть числом');
+
+    // Проверяем step_finish
+    const finishes = r.json.steps.filter(s => s.type === 'step_finish');
+    assert.strictEqual(finishes.length, 1, 'должен быть один step_finish');
+    assert.ok(finishes[0].tokens, 'должны быть tokens');
+    assert.strictEqual(finishes[0].tokens.total, 5000);
+    assert.strictEqual(finishes[0].cost, 0.004160833);
+
+    // Проверяем step_start
+    const starts = r.json.steps.filter(s => s.type === 'step_start');
+    assert.ok(starts.length >= 1, 'должен быть хотя бы один step_start');
+  });
+
+  await test('GET /api/jobs/:id/session-log — отсутствующий out.jsonl возвращает 200 с пустым массивом', async () => {
+    // Удаляем out.jsonl, job.json остаётся
+    try { fs.unlinkSync(path.join(sessJobDir, 'out.jsonl')); } catch {}
+    assert.ok(!fs.existsSync(path.join(sessJobDir, 'out.jsonl')), 'out.jsonl должен отсутствовать');
+
+    const r = await get('/api/jobs/' + sessJobId + '/session-log');
+    assert.strictEqual(r.status, 200, `должен быть 200, а не 404: ${r.body}`);
+    assert.ok(r.json.steps, 'должен быть массив steps');
+    assert.ok(Array.isArray(r.json.steps), 'steps должен быть массивом');
+    assert.strictEqual(r.json.steps.length, 0, 'массив должен быть пустым');
+    assert.strictEqual(r.json.totalSteps, 0, 'totalSteps должен быть 0');
+  });
+
+  await test('GET /api/jobs/:id/session-log — несуществующая задача → 404', async () => {
+    const r = await get('/api/jobs/nonexistent-session-log/session-log');
+    assert.strictEqual(r.status, 404);
+    assert.ok(r.json.error, 'должна быть ошибка');
+  });
+
+  await test('GET /api/jobs/:id/session-log — битые JSON-строки пропускаются', async () => {
+    // Восстанавливаем out.jsonl с битыми строками
+    const now = Date.now();
+    const outLines = [
+      '',  // пустая строка
+      JSON.stringify({ type: 'tool_use', timestamp: now, sessionID: 's1', part: { type: 'tool', tool: 'grep', title: 'grep test', state: { status: 'completed', input: { pattern: 'foo' }, output: 'found 2 matches', time: { start: now, end: now + 50 }, title: 'grep test' } } }),
+      '{ type: truncated',  // битый JSON (будто файл писался)
+      '  "json": "also broken"',
+      JSON.stringify({ type: 'step_finish', timestamp: now + 200, sessionID: 's1', part: { id: 'f2', reason: 'stop', type: 'step-finish', tokens: { total: 100, input: 60, output: 40 }, cost: 0.00005 } }),
+    ];
+    fs.writeFileSync(path.join(sessJobDir, 'out.jsonl'), outLines.join('\n') + '\n');
+
+    const r = await get('/api/jobs/' + sessJobId + '/session-log');
+    assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+    const steps = r.json.steps;
+    assert.ok(Array.isArray(steps), 'steps должен быть массивом');
+    // Должны быть только 2 валидные строки (grep tool_use и step_finish)
+    assert.strictEqual(steps.length, 2, `должно быть 2 валидных шага (битые строки пропущены): ${steps.length}`);
+    assert.strictEqual(steps[0].tool, 'grep');
+    assert.strictEqual(steps[1].type, 'step_finish');
+    assert.strictEqual(r.json.totalSteps, 2, 'totalSteps должен быть 2');
+  });
+
+  } finally {
+    try { fs.rmSync(sessJobDir, { recursive: true, force: true }); } catch {}
+  }
+
   // ---------------------------------------------------------------- stats
 
   await test('GET /api/stats — возвращает агрегированную статистику', async () => {
