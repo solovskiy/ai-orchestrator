@@ -135,7 +135,9 @@ routing уже есть — в `description` каждого агента (`agent
    конфигу» выше — тот же корень, чинится в фоне 2026-08-05).
    **Решено не делать:** кросс-платформенность (не-Windows) — сознательное
    решение, инструмент остаётся Windows/Git Bash-only, не в роадмапе.
-3. Нет `LICENSE`, `package.json`, CI.
+3. ~~Нет `LICENSE`, `package.json`, CI.~~ (сделано, 2026-08-05, `2de1e45`) —
+   MIT, `package.json` (`test` script), `.github/workflows/test.yml` на
+   `windows-latest`.
 4. ~~`research/binotel-chat-alternatives.md` — доменное исследование по
    телефонии заказчика, не относится к инструменту, не должно попадать в
    публичный репозиторий.~~ (сделано, 2026-08-05) — **вся** папка
