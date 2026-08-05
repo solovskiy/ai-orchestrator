@@ -70,7 +70,7 @@ auto-deploy в `.opencode/agents/research.md`. JSON тест восстанав�
   глобальном `settings.json` секции `hooks` тоже нет), плюс захардкожен
   `D:/work/vodovorot/...` и модель `deepseek/deepseek-v4-pro` — либо
   подключить и зачистить хардкод, либо выпилить.
-- `capabilities/` — v2-фолбэк, никогда не сработает, пока есть `agents/`.
+- ~~`capabilities/`~~ — удалено (2026-08-05), v2-фолбэк больше не существует.
 - `memory/` (`remember`/`recall`/`forget`/`learn`) — на деле 4 записи,
   3 из них дублируют/противоречат `agents/*.json` (`model:default` не
   совпадает с реальными моделями агентов). Оценить, нужна ли вообще

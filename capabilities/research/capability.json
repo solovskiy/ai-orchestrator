@@ -1,6 +1,0 @@
-{
-  "model": "opencode/deepseek-v4-flash-free",
-  "worktree": false,
-  "variant": "high",
-  "_note": "v2-фолбэк формат (устарел, см. bin/agent --help) — используется, только если agents/research.json отсутствует. Модель/runner теперь настраиваются через дашборд в agents/research.json — поле 'model' здесь может не совпадать с фактически используемой моделью, не полагаться на него как на источник правды. variant high: синтез источников требует deeper reasoning."
-}
