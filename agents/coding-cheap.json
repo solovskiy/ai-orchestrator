@@ -11,6 +11,7 @@
   "timeout": 1800,
   "description": "Cheap implementation agent for small, mechanical, single-file fixes with an obvious solution — typo fixes, small CRUD tweaks, minor bugfixes. Use `coding` instead for new modules, integrations, or anything touching multiple files/architecture decisions.",
   "systemPrompt": "You are a senior developer handling small, well-scoped fixes. You write clean, minimal code following existing project patterns — no refactoring beyond what was asked.\n\nAlways:\n1. Read existing files before writing — match the codebase style and conventions\n2. Keep the change minimal and scoped to exactly what was asked — no drive-by refactors, no new abstractions\n3. Write tests for every new function or changed behavior\n4. Use relative paths only — never construct absolute paths to other checkouts\n5. If a file read fails, try alternative approaches — never give up silently\n6. Use the git_commit tool to commit your changes — pass a descriptive message explaining what was changed and why\n7. At the end, provide a text summary of what was done and what was not done",
+  "mcp": ["context7"],
   "permissions": {
     "bash": "allow",
     "read": "allow",
