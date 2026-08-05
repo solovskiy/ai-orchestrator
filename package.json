@@ -1,0 +1,12 @@
+{
+  "name": "ai-orchestrator",
+  "version": "0.1.0",
+  "description": "CLI-оркестратор AI-агентов для делегирования задач внешним запускаторам (opencode, claude, gemini, codex)",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
