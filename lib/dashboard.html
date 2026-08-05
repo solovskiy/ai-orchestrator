@@ -240,24 +240,81 @@ let jobsCache = [];
 let sortField = 'createdAt';
 let sortDir = -1;  // -1 = по убыванию (новые сверху), 1 = по возрастанию
 let eventSource = null;
+let ws = null;
+let wsReconnectTimer = null;
 let pageSize = 50;
 let currentOffset = 0;
 let totalJobs = 0;
 
-async function loadJobs() {
-  // If we already have an EventSource, keep it running
+function setupWebSocket() {
+  try {
+    ws = new WebSocket('ws://' + location.host);
+
+    ws.onopen = () => {
+      $('#conn').style.color = 'var(--green)';
+      $('#conn').textContent = '● WS';
+      console.log('WebSocket connected');
+      // Initial data will come as first message from server
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const updates = JSON.parse(e.data);
+        if (!Array.isArray(updates)) return;
+
+        for (const msg of updates) {
+          if (msg.type === 'job_updated' && msg.job) {
+            const idx = jobsCache.findIndex(j => j.id === msg.job.id);
+            if (idx >= 0) {
+              jobsCache[idx] = { ...jobsCache[idx], ...msg.job };
+            } else {
+              jobsCache.push(msg.job);
+            }
+          } else if (msg.type === 'job_deleted' && msg.jobId) {
+            jobsCache = jobsCache.filter(j => j.id !== msg.jobId);
+          }
+        }
+        totalJobs = jobsCache.length;
+        renderJobs();
+      } catch (err) {
+        console.error('WebSocket message parse error:', err);
+      }
+    };
+
+    ws.onerror = () => {
+      console.log('WebSocket failed, falling back to SSE');
+      ws = null;
+      setupFallbackSSE();
+    };
+
+    ws.onclose = () => {
+      ws = null;
+      $('#conn').style.color = 'var(--muted)';
+      $('#conn').textContent = '○ WS disconnected';
+      // Try to reconnect after a delay, unless we already switched to SSE
+      wsReconnectTimer = setTimeout(() => {
+        if (!ws && !eventSource) {
+          const tab = $('nav button.active')?.dataset?.tab;
+          if (tab === 'jobs') {
+            setupWebSocket();
+          }
+        }
+      }, 3000);
+    };
+  } catch (e) {
+    console.log('WebSocket not supported, falling back to SSE');
+    setupFallbackSSE();
+  }
+}
+
+function setupFallbackSSE() {
   if (eventSource) return;
-  
-  // Initial fetch: get first page for immediate display
-  const data = await get('/api/jobs?limit=' + pageSize + '&offset=0');
-  jobsCache = data.jobs || data;
-  totalJobs = data.total || jobsCache.length;
-  currentOffset = 0;
-  renderJobs();
-  
-  // Set up SSE for real-time updates
+
+  $('#conn').style.color = 'var(--yellow)';
+  $('#conn').textContent = '● SSE';
+
   eventSource = new EventSource('/api/events');
-  
+
   eventSource.addEventListener('init', (e) => {
     const jobs = JSON.parse(e.data);
     jobsCache = jobs;
@@ -265,17 +322,14 @@ async function loadJobs() {
     currentOffset = 0;
     renderJobs();
   });
-  
+
   eventSource.addEventListener('job-update', (e) => {
     const updates = JSON.parse(e.data);
     if (Array.isArray(updates)) {
-      // Handle multiple updates
       updates.forEach(update => {
         if (update.status === 'deleted') {
-          // Remove deleted job
           jobsCache = jobsCache.filter(j => j.id !== update.id);
         } else {
-          // Update or add job
           const index = jobsCache.findIndex(j => j.id === update.id);
           if (index >= 0) {
             jobsCache[index] = { ...jobsCache[index], ...update };
@@ -285,7 +339,6 @@ async function loadJobs() {
         }
       });
     } else {
-      // Single update
       const update = updates;
       const index = jobsCache.findIndex(j => j.id === update.id);
       if (index >= 0) {
@@ -297,21 +350,36 @@ async function loadJobs() {
     totalJobs = jobsCache.length;
     renderJobs();
   });
-  
-  eventSource.onerror = function(error) {
+
+  eventSource.onerror = (error) => {
     console.error('SSE connection error:', error);
-    // Try to reconnect after a delay
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    // Try WebSocket again first, then SSE as fallback after delay
     setTimeout(() => {
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-        // Fallback to polling if SSE fails
-        if ($('nav button.active')?.dataset?.tab === 'jobs') {
-          loadJobs();
-        }
+      const tab = $('nav button.active')?.dataset?.tab;
+      if (tab === 'jobs') {
+        loadJobs();
       }
     }, 3000);
   };
+}
+
+async function loadJobs() {
+  // Already connected via WebSocket or SSE
+  if (ws || eventSource) return;
+
+  // Initial fetch: get first page for immediate display
+  const data = await get('/api/jobs?limit=' + pageSize + '&offset=0');
+  jobsCache = data.jobs || data;
+  totalJobs = data.total || jobsCache.length;
+  currentOffset = 0;
+  renderJobs();
+
+  // Try WebSocket first, fall back to SSE
+  setupWebSocket();
 }
 
 function renderJobs() {
@@ -1102,9 +1170,9 @@ setInterval(() => {
     const ed = $('#agent-editor');
     if (ed && !['', 'none'].includes(ed.style.display)) return;
   }
-  // For jobs tab, SSE handles updates, so we don't need polling
+  // For jobs tab, WebSocket/SSE handles updates, so we don't need polling
   if (tab === 'jobs') {
-    // SSE is already running via loadJobs()
+    // WebSocket or SSE is already running via loadJobs()
     return;
   }
   (routes[tab] || loadJobs)();
