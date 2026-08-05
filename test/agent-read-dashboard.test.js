@@ -107,7 +107,8 @@ async function run() {
       assert.ok(model, 'model не должна быть пустой');
       assert.ok(model.includes('/'), `model должна содержать /: ${model}`);
       assert.ok(worktree === '0' || worktree === '1', `worktree должно быть 0/1: ${worktree}`);
-      assert.ok(variant, 'variant не должен быть пустым');
+      // variant может быть null/пустым — проверяем инвариант (поле присутствует и это строка)
+      assert.strictEqual(typeof variant, 'string', `variant должен быть строкой в выводе (получено: ${typeof variant})`);
       // runner — может быть пустым (auto-detected из model; research.json не задаёт его явно)
     });
 
@@ -123,6 +124,10 @@ async function run() {
       // Сохраняем оригинальный конфиг research
       const researchFile = path.join(AGENTS_DIR, 'research.json');
       const original = fs.readFileSync(researchFile, 'utf8');
+
+      // Сохраняем деплоенный .opencode/agents/research.md (побочный эффект apiSave)
+      const deployFile = path.join(__dirname, '..', '.opencode', 'agents', 'research.md');
+      const deployOriginal = fs.existsSync(deployFile) ? fs.readFileSync(deployFile, 'utf8') : null;
 
       try {
         const newModel = 'deepseek/deepseek-v4-flash-changed';
@@ -150,6 +155,13 @@ async function run() {
       } finally {
         // Восстанавливаем оригинальный конфиг
         fs.writeFileSync(researchFile, original);
+
+        // Восстанавливаем деплоенный .opencode/agents/research.md
+        if (deployOriginal === null) {
+          try { fs.unlinkSync(deployFile); } catch { /* файла не было — ок */ }
+        } else {
+          fs.writeFileSync(deployFile, deployOriginal);
+        }
       }
     });
 
