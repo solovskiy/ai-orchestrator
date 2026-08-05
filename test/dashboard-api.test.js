@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { WebSocket } = require('ws');
 const { createServer } = require('../lib/dashboard.js');
 
 const AGENTS_DIR = path.join(__dirname, '..', 'agents');
@@ -562,6 +563,153 @@ async function runTests() {
   await test('POST /api/agents/:name/test-run — 404 для несуществующего', async () => {
     const r = await req('POST', '/api/agents/nonexistent-xyz/test-run', { prompt: 'echo ok' });
     assert.strictEqual(r.status, 404);
+  });
+
+  // ---------------------------------------------------------------- WebSocket
+
+  await test('WebSocket — соединение устанавливается без ошибок', async () => {
+    const wsPort = new URL(baseUrl).port;
+    const wsUrl = 'ws://127.0.0.1:' + wsPort;
+
+    const wsClient = new WebSocket(wsUrl);
+    let connected = false;
+    let closed = false;
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('таймаут подключения WebSocket')), 5000);
+
+      wsClient.on('open', () => {
+        connected = true;
+        clearTimeout(timeout);
+        // Wait a moment for any initial message, then close
+        setTimeout(() => {
+          wsClient.close();
+        }, 500);
+      });
+
+      wsClient.on('close', () => {
+        closed = true;
+        resolve();
+      });
+
+      wsClient.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
+    assert.ok(connected, 'WebSocket должен был подключиться');
+    assert.ok(closed, 'WebSocket должен был закрыться');
+  });
+
+  await test('WebSocket — при создании задачи приходит уведомление', async () => {
+    const wsPort = new URL(baseUrl).port;
+    const wsUrl = 'ws://127.0.0.1:' + wsPort;
+
+    const wsJobId = 'ws-test-job-' + Date.now();
+    const wsJobDir = path.join(__dirname, '..', 'jobs', wsJobId);
+
+    // Connect WebSocket first
+    const wsClient = new WebSocket(wsUrl);
+    let receivedMessages = [];
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('таймаут ожидания init-сообщения')), 5000);
+
+      wsClient.on('open', () => {
+        // Wait for initial bootstrap message
+      });
+
+      wsClient.on('message', (data) => {
+        try {
+          const msgs = JSON.parse(data.toString());
+          receivedMessages.push(...(Array.isArray(msgs) ? msgs : [msgs]));
+        } catch {}
+      });
+
+      // After receiving initial data, create a job
+      setTimeout(() => {
+        try {
+          fs.mkdirSync(wsJobDir, { recursive: true });
+          const job = {
+            id: wsJobId,
+            task: 'ws-test-task',
+            status: 'running',
+            model: 'test/ws-model',
+            runner: 'test',
+            createdAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(path.join(wsJobDir, 'job.json'), JSON.stringify(job, null, 2) + '\n');
+        } catch (e) {
+          reject(e);
+          return;
+        }
+
+        // Wait for the WebSocket server to detect the change (~1.5s polling + buffer)
+        setTimeout(() => {
+          clearTimeout(timeout);
+          wsClient.close();
+        }, 2500);
+      }, 500);
+
+      wsClient.on('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+
+      wsClient.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
+    // Clean up the test job directory
+    try { fs.rmSync(wsJobDir, { recursive: true, force: true }); } catch {}
+
+    // Filter for our specific job
+    const jobMessages = receivedMessages.filter(
+      m => m.type === 'job_updated' && m.job && m.job.id === wsJobId
+    );
+
+    assert.ok(jobMessages.length >= 1,
+      `должно быть хотя бы одно сообщение о задаче ${wsJobId}, получено сообщений: ${JSON.stringify(receivedMessages.slice(0, 5))}`);
+    const jobMsg = jobMessages[jobMessages.length - 1]; // last message (after the job was created)
+    assert.strictEqual(jobMsg.job.task, 'ws-test-task');
+    assert.strictEqual(jobMsg.job.status, 'running');
+    assert.strictEqual(jobMsg.job.model, 'ws-model');
+  });
+
+  await test('WebSocket — отключение клиента не ломает сервер', async () => {
+    const wsPort = new URL(baseUrl).port;
+    const wsUrl = 'ws://127.0.0.1:' + wsPort;
+
+    // Connect and disconnect multiple clients
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve, reject) => {
+        const wsClient = new WebSocket(wsUrl);
+        const timeout = setTimeout(() => reject(new Error('таймаут')), 3000);
+
+        wsClient.on('open', () => {
+          // Immediately close — aggressive disconnect
+          wsClient.close();
+        });
+
+        wsClient.on('close', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+
+        wsClient.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+    }
+
+    // Verify the server still responds to HTTP
+    const r = await get('/api/jobs');
+    assert.strictEqual(r.status, 200);
+    assert.ok(Array.isArray(r.json.jobs), 'HTTP API должен работать после WebSocket disconnect');
   });
 
   } finally {
