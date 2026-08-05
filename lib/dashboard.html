@@ -113,6 +113,24 @@ label .tip { font-weight: normal; }
 .modal.open { display: flex; }
 .modal .box { background: var(--card); border-radius: 10px; padding: 24px; width: 500px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 .modal .box h3 { margin-bottom: 12px; }
+/* session log */
+#session-log { margin-top: 16px; }
+.sess-step { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+.sess-step.sess-finish { opacity: 0.65; font-size: 12px; }
+.sess-step.sess-start { border-style: dashed; opacity: 0.5; }
+.sess-header { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; font-size: 13px; }
+.sess-header:hover { background: var(--row-hover); }
+.sess-body { display: none; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--row-hover); }
+.sess-step.open .sess-body { display: block; }
+.sess-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; font-family: monospace; background: var(--accent-bg); color: var(--accent); min-width: 48px; text-align: center; }
+.sess-tag.step-start { background: #f3f4f6; color: var(--muted); }
+.sess-tag.step-finish { background: #f0fdf4; color: var(--green); }
+.sess-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess-title.step-start { color: var(--muted); }
+.sess-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sess-empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+.sess-error { color: var(--red); font-size: 12px; }
+.sess-section-label { font-size: 11px; color: var(--muted); margin: 6px 0 2px 0; text-transform: uppercase; }
 </style>
 
 <!-- xterm.js CDN -->
@@ -459,6 +477,10 @@ async function openDetail(id) {
     h += '<div id="terminal"></div>';
   }
 
+  // Session log block
+  h += '<h4 style="margin-top:16px">Сессия агента</h4>';
+  h += '<div id="session-log"><div class="sess-empty">загрузка...</div></div>';
+
   // Action buttons: kill / delete
   h += '<div style="margin-top:16px;display:flex;gap:8px">';
   if (d.status === 'running') {
@@ -491,6 +513,8 @@ async function openDetail(id) {
       openTerminal('terminal', logContent.replace(/\r?\n/g, '\r\n'));
     }
   }
+  // Load session log asynchronously
+  loadSessionLog(id);
   $('#detail').classList.add('open');
   $('#overlay').classList.add('open');
 }
@@ -529,6 +553,97 @@ async function deleteJob(id) {
     }
   } catch(e) {
     toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+// ===================================================================== SESSION LOG
+
+function fmtDurationMs(ms) {
+  if (ms == null) return '';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return Math.floor(ms / 60000) + 'm ' + Math.floor((ms % 60000) / 1000) + 's';
+}
+
+function toggleSessStep(el) {
+  el.classList.toggle('open');
+}
+
+function renderSessionLog(steps) {
+  if (!steps || steps.length === 0) {
+    return '<div class="sess-empty">лог сессии пока пуст</div>';
+  }
+  let h = '';
+  let stepNum = 0;
+  for (const s of steps) {
+    stepNum++;
+    if (s.type === 'tool_use') {
+      const tag = esc(s.tool || '?');
+      const title = esc(s.title || s.tool || '');
+      const dur = s.durationMs != null ? ' \u00b7 ' + fmtDurationMs(s.durationMs) : '';
+      const status = s.status === 'completed' ? '' : ' \u00b7 <span style="color:var(--red)">' + esc(s.status) + '</span>';
+
+      h += '<div class="sess-step" onclick="toggleSessStep(this)">';
+      h += '<div class="sess-header">';
+      h += '<span class="sess-tag">' + tag + '</span>';
+      h += '<span class="sess-title">' + title + '</span>';
+      h += '<span class="sess-meta">шаг ' + stepNum + dur + status + '</span>';
+      h += '</div>';
+      h += '<div class="sess-body">';
+
+      // Input
+      if (s.input && Object.keys(s.input).length > 0) {
+        h += '<div class="sess-section-label">вход</div>';
+        h += '<pre>' + esc(JSON.stringify(s.input, null, 2)) + '</pre>';
+      }
+
+      // Output
+      if (s.output) {
+        h += '<div class="sess-section-label">выход' + (s.outputTruncated ? ' (первые 2000 симв.)' : '') + '</div>';
+        h += '<pre>' + esc(String(s.output)) + '</pre>';
+      }
+
+      h += '</div></div>';
+    } else if (s.type === 'step_finish') {
+      const tokens = s.tokens ? (fmtNum(s.tokens.total) + ' токенов (вход ' + fmtNum(s.tokens.input) + ', выход ' + fmtNum(s.tokens.output) + ')') : '';
+      const cost = s.cost != null ? '$' + s.cost.toFixed(6) : '';
+      const meta = [tokens, cost].filter(Boolean).join(' \u00b7 ');
+
+      h += '<div class="sess-step sess-finish" onclick="toggleSessStep(this)">';
+      h += '<div class="sess-header">';
+      h += '<span class="sess-tag step-finish">step</span>';
+      h += '<span class="sess-title">завершение шага</span>';
+      h += '<span class="sess-meta">' + esc(meta) + '</span>';
+      h += '</div>';
+      h += '<div class="sess-body">';
+      if (s.tokens) {
+        h += '<pre>' + esc(JSON.stringify(s.tokens, null, 2)) + '</pre>';
+      }
+      if (s.cost != null) {
+        h += '<div class="field"><div class="k">стоимость</div><div class="v">$' + s.cost.toFixed(6) + '</div></div>';
+      }
+      h += '</div></div>';
+    } else if (s.type === 'step_start') {
+      h += '<div class="sess-step sess-start">';
+      h += '<div class="sess-header">';
+      h += '<span class="sess-tag step-start">\u25b8 new</span>';
+      h += '<span class="sess-title step-start">новый шаг</span>';
+      h += '</div></div>';
+    }
+  }
+  return h;
+}
+
+async function loadSessionLog(id) {
+  const container = document.getElementById('session-log');
+  if (!container) return;
+  try {
+    const r = await fetch(API + '/api/jobs/' + id + '/session-log');
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    const data = await r.json();
+    container.innerHTML = renderSessionLog(data.steps);
+  } catch (e) {
+    container.innerHTML = '<div class="sess-error">ошибка загрузки лога сессии: ' + esc(e.message) + '</div>';
   }
 }
 
