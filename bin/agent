@@ -696,11 +696,16 @@ cmd_init() {
 
   if [[ -e "$dst" ]]; then
     echo "skill уже установлен: $dst"
-    echo "  для переустановки: rm -rf \"$dst\" && agent init"
+    echo "  для переустановки (например, после обновления .ai): rm -rf \"$dst\" && agent init"
   else
     mkdir -p "$dst" || die "не удалось создать $dst"
-    cp "$src/SKILL.md" "$dst/SKILL.md" || die "не удалось скопировать SKILL.md"
-    echo "skill agent-bridge установлен глобально: $dst"
+    # {{AI_HOME}} в исходнике — плейсхолдер, подставляем реальный путь этой
+    # машины при деплое: сам SKILL.md в репозитории остаётся переносимым
+    # (не завязан на то, куда его склонировали), команды внутри деплоенной
+    # копии получаются абсолютными и рабочими из любого cwd.
+    sed "s#{{AI_HOME}}#$AI_HOME#g" "$src/SKILL.md" > "$dst/SKILL.md" \
+      || die "не удалось скопировать SKILL.md"
+    echo "skill agent-bridge установлен глобально: $dst (пути закреплены за $AI_HOME)"
   fi
 
   echo ""

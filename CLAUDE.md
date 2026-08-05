@@ -1,8 +1,9 @@
 # .ai — Оркестратор AI-агентов
 
 Этот репозиторий — CLI-инструмент для делегирования задач другим AI-агентам
-(OpenCode, Claude Code CLI, Gemini CLI и т.д.). Используется как подмодуль или
-отдельный инструмент в проектах.
+(OpenCode, Claude Code CLI, Gemini CLI и т.д.). Устанавливается один раз на
+машину (`bin/agent init`, см. `README.md` → «Установка») и работает с любым
+проектом через `--repo <path>` — копировать `.ai` в каждый проект не нужно.
 
 ## Для чего
 
@@ -16,14 +17,17 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 о завершении:
 
 ```bash
-# capability вместо имени модели — думай задачей, не раннером. Какая
+# agent list — сверить актуальный ростер один раз за сессию (растёт, не
+# хардкодить): .ai/bin/agent agent list
+
+# --agent вместо имени модели — думай задачей, не раннером. Какая
 # модель сейчас за research/coding — не запоминать, настраивается в
 # agents/*.json/дашборде (см. docs/workflow.md); переопределить — --model.
 .ai/bin/agent delegate --task my-task --repo /path/to/project \
-  --capability research --prompt "сделай ..."
+  --agent research --prompt "сделай ..."
 
 .ai/bin/agent delegate --task my-task --repo /path/to/project \
-  --capability coding --verify "npm test" --prompt-file tz.md
+  --agent coding --verify "npm test" --prompt-file tz.md
 ```
 
 `delegate` сам делает start + wait + (при необходимости) один heal-ретрай +
@@ -76,7 +80,8 @@ NEVER/ASK/ALWAYS, troubleshooting — импортируется прямо сю
 
 @docs/workflow.md
 
-Проекты-потребители подключают тот же файл через
-`@D:/work/vodovorot/.ai/docs/workflow.md` в своём CLAUDE.md — не дублируя текст.
+Проекты-потребители могут (опционально, базовая механика и так доступна
+глобально после `bin/agent init`) подключить тот же файл через
+`@<путь-к-.ai>/docs/workflow.md` в своём CLAUDE.md — не дублируя текст.
 
 Полная документация (команды, `--verify`, написание ТЗ) — `.ai/README.md`.

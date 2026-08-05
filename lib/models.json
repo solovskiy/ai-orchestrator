@@ -1,5 +1,6 @@
 {
   "opencode": "opencode",
+  "opencode-go": "opencode",
   "deepseek": "opencode",
   "openai": "opencode",
   "anthropic": "opencode",

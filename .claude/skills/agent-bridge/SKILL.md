@@ -3,28 +3,66 @@ name: agent-bridge
 description: Делегирование ресёрча и написания кода фоновому CLI-агенту (opencode/claude/gemini) через .ai/bin/agent — без блокировки терминала, с уведомлением о завершении.
 ---
 
-Инструмент живёт в `.ai/` этого проекта (bash CLI `.ai/bin/agent` + Node
-внутри). Полные правила «когда делегировать» — `.ai/docs/workflow.md`
-(NEVER/ASK/ALWAYS, критерии ресёрч vs код). Здесь — только механика вызова.
+Инструмент установлен на этой машине один раз — `{{AI_HOME}}` — и работает
+с любым проектом через `--repo <path>`, копировать его в проект не нужно.
+Полные правила «когда делегировать» — `{{AI_HOME}}/docs/workflow.md`
+(NEVER/ASK/ALWAYS, критерии ресёрч vs код). Здесь — механика вызова.
+Все команды ниже — абсолютным путём `{{AI_HOME}}/bin/agent`, это работает
+из любой директории независимо от того, где сейчас cwd.
+
+## Какой агент взять
+
+Ростер меняется (агентов сейчас больше двух, и число растёт) — не
+хардкодь имена и не полагайся на память из прошлой сессии. Достаточно
+свериться **один раз за сессию** (не перед каждым delegate — ростер за
+одну сессию не меняется):
+
+```bash
+{{AI_HOME}}/bin/agent agent list          # имя / модель / worktree да-нет / инструменты
+{{AI_HOME}}/bin/agent agent show <name>   # полный JSON, включая description с явными
+                                           # подсказками «использовать вместо X, когда Y»
+```
+
+Выбирай по `description` — там прямо написано, для какой задачи агент и
+когда взять другой. Два структурных признака из `agent list`:
+- **`worktree: нет`** — агент только читает/анализирует и пишет отчёт,
+  код не меняет (research-тип). `--repo` может быть любой папкой, git не
+  обязателен.
+- **`worktree: да`** — агент коммитит изменения в свою ветку (coding/контент-тип).
+  **`--repo` обязан указывать на git-репозиторий**, иначе `start`
+  падает ещё до запуска модели с `не git-репозиторий: <path>` — если
+  видишь эту ошибку, либо это не то, что нужно (возьми research-тип), либо
+  папку сначала нужно `git init`.
+
+Нет подходящего агента под задачу — не подгоняй имеющийся, создай новый
+(дёшево, отдельный JSON):
+
+```bash
+{{AI_HOME}}/bin/agent agent create <name>   # заготовка в agents/<name>.json — отредактировать
+                                             # model/description/systemPrompt/worktree под задачу
+```
 
 ## Рекомендуемый вход: delegate
 
 `delegate` делает start → wait → (при необходимости) heal → печатает
-результат одним вызовом. Запускать **целиком через фоновый Bash**
+результат одним вызовом — это и есть весь «оркестратор», отдельного слоя
+поверх него заводить не нужно. Запускать **целиком через фоновый Bash**
 (`run_in_background: true`) — так харнесс пришлёт уведомление о завершении.
 
 ```bash
-# Исследование (без worktree):
-.ai/bin/agent delegate --task <slug> --repo <path> \
-  --capability research --prompt "изучи X, сохрани отчёт в <файл>.md"
+# Research-тип (без worktree):
+{{AI_HOME}}/bin/agent delegate --task <slug> --repo <path> \
+  --agent research --prompt "изучи X, сохрани отчёт в <файл>.md"
 
-# Код (с worktree и проверкой):
-.ai/bin/agent delegate --task <slug> --repo <path> \
-  --capability coding --verify "npm test" --prompt-file <ТЗ.md>
+# Coding-тип (с worktree и проверкой):
+{{AI_HOME}}/bin/agent delegate --task <slug> --repo <path> \
+  --agent coding --verify "npm test" --prompt-file <ТЗ.md>
 ```
 
-`--capability` подставляет модель и worktree из `capabilities/<name>/capability.json`.
-Явные `--model`/`--worktree` переопределяют capability.
+`--agent <name>` подставляет модель/worktree/permissions/systemPrompt из
+`agents/<name>.json`. Явные `--model`/`--worktree` переопределяют это.
+`<path>` — путь к проекту, над которым работает агент; не обязан
+совпадать с `{{AI_HOME}}`, обычно это другой проект на этой же машине.
 
 Флаги delegate:
 - `--timeout <сек>` — таймаут ожидания (по умолч. 1800)
@@ -41,14 +79,14 @@ description: Делегирование ресёрча и написания к�
 
 ```bash
 # 1) старт нескольких задач (обычный Bash-вызов, возвращает jobId сразу)
-.ai/bin/agent start --task <slug1> --repo <path> --capability coding --prompt-file tz1.md
-.ai/bin/agent start --task <slug2> --repo <path> --capability coding --prompt-file tz2.md
+{{AI_HOME}}/bin/agent start --task <slug1> --repo <path> --agent coding --prompt-file tz1.md
+{{AI_HOME}}/bin/agent start --task <slug2> --repo <path> --agent coding --prompt-file tz2.md
 
 # 2) ожидание всех — ОТДЕЛЬНЫМ Bash с run_in_background: true
-.ai/bin/agent wait <jobId1> <jobId2>
+{{AI_HOME}}/bin/agent wait <jobId1> <jobId2>
 
 # 3) результат каждой после уведомления
-.ai/bin/agent result <jobId1>
+{{AI_HOME}}/bin/agent result <jobId1>
 ```
 
 Без фонового `wait` уведомление о завершении не придёт — `start` отсоединён
@@ -57,19 +95,20 @@ description: Делегирование ресёрча и написания к�
 ## Продолжить сессию новой репликой
 
 ```bash
-.ai/bin/agent send <jobId> "новые вводные"   # новая задача (свой jobId/wait), тот же sessionId
+{{AI_HOME}}/bin/agent send <jobId> "новые вводные"   # новая задача (свой jobId/wait), тот же sessionId
 ```
 
 Единственный способ достучаться до диалога — headless-режим не блокируется
-в ожидании ответа посреди задачи (см. `.ai/docs/workflow.md` → «Если задача
-застряла»): агент либо решает вопрос сам по своему суждению и помечает это
-в финальном тексте, либо не завершает работу вовсе. Если по `tail`/`result`
-видно открытый вопрос — отвечай через `send`, не жди «живого» диалога.
+в ожидании ответа посреди задачи (см. `{{AI_HOME}}/docs/workflow.md` →
+«Если задача застряла»): агент либо решает вопрос сам по своему суждению
+и помечает это в финальном тексте, либо не завершает работу вовсе. Если
+по `tail`/`result` видно открытый вопрос — отвечай через `send`, не жди
+«живого» диалога.
 
 ## Восстановление проваленной задачи
 
 ```bash
-.ai/bin/agent heal <jobId>   # retry для validation_error / abandoned
+{{AI_HOME}}/bin/agent heal <jobId>   # retry для validation_error / abandoned
 ```
 
 `heal` читает `diagnosis.json` и отправляет структурированное сообщение
@@ -79,7 +118,7 @@ description: Делегирование ресёрча и написания к�
 ## Интерактивный чат (foreground)
 
 ```bash
-.ai/bin/agent chat --task <slug> --repo <path> --model opencode/deepseek-v4-chat
+{{AI_HOME}}/bin/agent chat --task <slug> --repo <path> --model opencode/deepseek-v4-chat
 ```
 
 Блокирующий интерактивный режим — для тестирования модели «вживую». Не для
@@ -89,10 +128,10 @@ claude, gemini).
 
 ## Если задача застряла
 
-`.ai/bin/agent tail <jobId>` — что агент уже написал (стримится в
+`{{AI_HOME}}/bin/agent tail <jobId>` — что агент уже написал (стримится в
 `out.jsonl`, не одним куском в конце). Признак реального зависания — не
 «ждёт подтверждения» (headless-режим их не спрашивает), а лог не растёт
 намного дольше разумного при живом `pid`. Тогда `agent kill <jobId>` и
 перезапуск с уточнённым промптом.
 
-Полный список команд: `.ai/bin/agent --help`.
+Полный список команд: `{{AI_HOME}}/bin/agent --help`.

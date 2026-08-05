@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path');
+
+// Хук лежит в <AI_HOME>/hooks/ — сам вычисляет свой AI_HOME, без
+// хардкода машины (переносимо между установками .ai).
+const AI_HOME = path.resolve(__dirname, '..').replace(/\\/g, '/');
+
 /**
  * PreToolUse-хук на встроенный субагент (Task/Agent).
  *
@@ -25,11 +31,11 @@ process.stdin.on('end', () => {
     'Claude и ест контекст этой сессии.',
     '',
     'Если это многоисточниковое исследование или кодоген по образцу —',
-    'делегируй вместо этого через дешёвый DeepSeek:',
-    '  D:/work/vodovorot/.ai/bin/agent start --task <slug> --repo <path> \\',
-    '    [--model deepseek/deepseek-v4-pro для ресёрча] --prompt "..."',
-    '  D:/work/vodovorot/.ai/bin/agent wait <jobId>   # отдельным фоновым Bash!',
-    '  D:/work/vodovorot/.ai/bin/agent result <jobId>',
+    'делегируй вместо этого через дешёвый DeepSeek (один фоновый Bash-вызов,',
+    'run_in_background: true — харнесс сам пришлёт уведомление о завершении):',
+    `  ${AI_HOME}/bin/agent agent list   # актуальный ростер, если ещё не смотрел в этой сессии`,
+    `  ${AI_HOME}/bin/agent delegate --task <slug> --repo <path> \\`,
+    '    --agent <research|coding|...> --prompt "..."',
     '',
     'Если субагент нужен для чтения ЛОКАЛЬНОГО кода (Explore/Plan) или задачи,',
     'которой реально нужен Claude-уровень/история сессии — игнорируй это.',
