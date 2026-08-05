@@ -149,7 +149,7 @@ from `agents/<name>.json` — `.ai`'s canonical JSON format.
 
 The agent roster is not fixed in this README and is not hardcoded — it grows
 (as of 2026-08-05: `research`, `research-code`, `coding`, `coding-cheap`,
-`cop`); the current list with model/worktree/tools — a command, not a table:
+`copywriter`); the current list with model/worktree/tools — a command, not a table:
 
 ```bash
 .ai/bin/agent agent list          # name, model, worktree yes/no, tools

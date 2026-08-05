@@ -1,5 +1,5 @@
 {
-  "name": "cop",
+  "name": "copywriter",
   "runner": "",
   "model": "opencode-go/deepseek-v4-pro",
   "variant": "medium",

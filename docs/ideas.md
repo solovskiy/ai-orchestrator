@@ -13,7 +13,7 @@
 дашборд (`lib/dashboard.js:607`) пишет **только** в `AI_HOME/.opencode/agents`
 (локальную копию самого `.ai`), не в глобальную папку. Проверено 2026-08-04:
 `coding`/`research` в global разошлись с `agents/*.json` (старый промпт,
-старая модель), `coding-cheap`/`cop`/`research-code` в global вообще
+старая модель), `coding-cheap`/`copywriter`/`research-code` в global вообще
 отсутствуют — на практике эти агенты недоступны ни в одном проекте, кроме
 самого `.ai`. Модель не проседает (передаётся explicit `--model` поверх
 `.md`), но systemPrompt и permissions — да.
@@ -90,7 +90,7 @@ auto-deploy в `.opencode/agents/research.md`. JSON тест восстанав�
   (`agent agent list`/`show`/`create`), не хардкодится; строка
   `opencode-go/*` добавлена.
 - `.claude/skills/agent-bridge/SKILL.md` — только `--capability`,
-  агентов `coding-cheap`/`cop`/`research-code` не знает. → переписан по
+  агентов `coding-cheap`/`copywriter`/`research-code` не знает. → переписан по
   решению ниже (routing через `agent agent list`, без перечисления имён),
   переустановлен в `~/.claude/skills/agent-bridge/`.
 - `docs/workflow.md` — таблица под research/coding, дефолт модели не
