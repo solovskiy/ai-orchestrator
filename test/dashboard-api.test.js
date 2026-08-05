@@ -712,6 +712,152 @@ async function runTests() {
     assert.ok(Array.isArray(r.json.jobs), 'HTTP API должен работать после WebSocket disconnect');
   });
 
+  // ---------------------------------------------------------------- memory API
+
+  const MEMORY_FILE = path.join(__dirname, '..', 'memory', 'index.json');
+  let origMemory = null; // сохраним оригинальный файл и восстановим после тестов
+
+  try {
+    // Сохраняем оригинальную память
+    try { origMemory = fs.readFileSync(MEMORY_FILE, 'utf8'); } catch {}
+
+    // Чистим файл для тестов
+    try { fs.unlinkSync(MEMORY_FILE); } catch {}
+
+    await test('GET /api/memory — возвращает пустой массив, если файл отсутствует', async () => {
+      const r = await get('/api/memory');
+      assert.strictEqual(r.status, 200);
+      assert.ok(r.json.entries, 'должен быть ключ entries');
+      assert.ok(Array.isArray(r.json.entries), 'entries должен быть массивом');
+      assert.strictEqual(r.json.entries.length, 0, 'entries должен быть пустым');
+    });
+
+    await test('POST /api/memory — создаёт запись, возвращает её с полями', async () => {
+      const r = await req('POST', '/api/memory', {
+        key: 'test_key_1',
+        content: 'тестовое значение',
+        tags: ['test', 'api'],
+      });
+      assert.strictEqual(r.status, 201, `должен быть 201: ${r.body}`);
+      assert.strictEqual(r.json.key, 'test_key_1');
+      assert.strictEqual(r.json.value, 'тестовое значение');
+      assert.ok(r.json.created, 'должен быть created');
+      assert.ok(r.json.updated, 'должен быть updated');
+      assert.deepStrictEqual(r.json.tags, ['test', 'api']);
+      assert.strictEqual(r.json.source, null, 'source должен быть null по умолчанию');
+    });
+
+    await test('POST /api/memory — 400 если нет key', async () => {
+      const r = await req('POST', '/api/memory', { content: 'без ключа' });
+      assert.strictEqual(r.status, 400);
+      assert.ok(r.json.error, 'должна быть ошибка');
+    });
+
+    await test('POST /api/memory — 400 если нет content/value', async () => {
+      const r = await req('POST', '/api/memory', { key: 'no_content' });
+      assert.strictEqual(r.status, 400);
+      assert.ok(r.json.error, 'должна быть ошибка');
+    });
+
+    await test('GET /api/memory после добавления — возвращает созданную запись', async () => {
+      const r = await get('/api/memory');
+      assert.strictEqual(r.status, 200);
+      assert.ok(r.json.entries.length >= 1, 'должна быть минимум 1 запись');
+      const entry = r.json.entries.find(e => e.key === 'test_key_1');
+      assert.ok(entry, 'должна быть запись test_key_1');
+      assert.strictEqual(entry.value, 'тестовое значение');
+      assert.deepStrictEqual(entry.tags, ['test', 'api']);
+    });
+
+    await test('PUT /api/memory/:key — обновляет существующую запись', async () => {
+      const r = await fetch(baseUrl + '/api/memory/' + encodeURIComponent('test_key_1'), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'обновлённое значение', tags: ['updated'] }),
+      });
+      const json = await r.json();
+      assert.strictEqual(r.status, 200, `должен быть 200: ${JSON.stringify(json)}`);
+      assert.strictEqual(json.key, 'test_key_1');
+      assert.strictEqual(json.value, 'обновлённое значение');
+      assert.deepStrictEqual(json.tags, ['updated']);
+
+      // Проверяем через GET
+      const r2 = await get('/api/memory');
+      const entry = r2.json.entries.find(e => e.key === 'test_key_1');
+      assert.ok(entry, 'запись должна существовать');
+      assert.strictEqual(entry.value, 'обновлённое значение');
+    });
+
+    // Используем fetch напрямую для PUT/DELETE (метод req() в тестах только GET/POST)
+    async function putDeleteTest() {
+      // Создаём вторую запись для теста удаления
+      await req('POST', '/api/memory', {
+        key: 'test_key_2',
+        content: 'для удаления',
+        tags: ['delete-test'],
+      });
+
+      await test('DELETE /api/memory/:key — удаляет запись', async () => {
+        const r = await fetch(baseUrl + '/api/memory/' + encodeURIComponent('test_key_2'), { method: 'DELETE' });
+        assert.strictEqual(r.status, 200);
+        const json = await r.json();
+        assert.strictEqual(json.ok, true);
+
+        // Проверяем, что запись удалена
+        const r2 = await get('/api/memory');
+        const entry = r2.json.entries.find(e => e.key === 'test_key_2');
+        assert.strictEqual(entry, undefined, 'запись должна быть удалена');
+      });
+
+      await test('DELETE /api/memory/:key — 404 для несуществующей', async () => {
+        const r = await fetch(baseUrl + '/api/memory/' + encodeURIComponent('nonexistent_key'), { method: 'DELETE' });
+        assert.strictEqual(r.status, 404);
+        const json = await r.json();
+        assert.ok(json.error, 'должна быть ошибка');
+      });
+
+      await test('PUT /api/memory/:key — 404 для несуществующей', async () => {
+        const r = await fetch(baseUrl + '/api/memory/' + encodeURIComponent('nonexistent_key'), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: 'no' }),
+        });
+        assert.strictEqual(r.status, 404);
+        const json = await r.json();
+        assert.ok(json.error, 'должна быть ошибка');
+      });
+    }
+    await putDeleteTest();
+
+    // Создаём запись с content (синоним value)
+    await test('POST /api/memory — принимает content как синоним value', async () => {
+      const r = await req('POST', '/api/memory', {
+        key: 'test_content_alias',
+        content: 'через content',
+        tags: ['alias'],
+      });
+      assert.strictEqual(r.status, 201, `должен быть 201: ${r.body}`);
+      assert.strictEqual(r.json.value, 'через content');
+    });
+
+    // PUT через content (синоним)
+    await test('PUT /api/memory/:key — принимает content как синоним value', async () => {
+      const r = await fetch(baseUrl + '/api/memory/' + encodeURIComponent('test_content_alias'), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'обновлено через content' }),
+      });
+      assert.strictEqual(r.status, 200, `должен быть 200`);
+      const json = await r.json();
+      assert.strictEqual(json.value, 'обновлено через content');
+    });
+
+  } finally {
+    // Восстанавливаем оригинальную память
+    if (origMemory) {
+      fs.writeFileSync(MEMORY_FILE, origMemory);
+    } else {
+      try { fs.unlinkSync(MEMORY_FILE); } catch {}
+    }
+  }
+
   } finally {
     server.close();
   }
