@@ -144,6 +144,7 @@ label .tip { font-weight: normal; }
     <button data-tab="jobs" class="active">Задачи</button>
     <button data-tab="stats">Статистика</button>
     <button data-tab="settings">Агенты</button>
+    <button data-tab="memory">Memory</button>
   </nav>
   <span style="flex:1"></span>
   <span id="conn" style="font-size:11px;color:var(--green)">●</span>
@@ -1002,6 +1003,7 @@ const routes = {
   jobs: loadJobs,
   stats: loadStats,
   settings: loadSettings,
+  memory: loadMemory,
 };
 
 function switchTab(name) {
@@ -1086,6 +1088,153 @@ async function doTestRun(name) {
   }
 }
 
+// ===================================================================== MEMORY
+
+async function loadMemory() {
+  let h = '';
+
+  // New entry form
+  h += '<div class="card" id="memory-form-card" style="display:none">';
+  h += '<h3>New Entry</h3>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  h += '<div><label>Key ' + tip('Уникальный ключ. Используй латиницу, дефисы и двоеточия.') + '</label><input type="text" id="mem-key"></div>';
+  h += '<div><label>Tags ' + tip('Теги через запятую.') + '</label><input type="text" id="mem-tags"></div>';
+  h += '</div>';
+  h += '<label>Content</label><textarea id="mem-content" rows="4" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
+  h += '<div style="margin-top:8px;display:flex;gap:8px">';
+  h += '<button class="primary" onclick="saveMemoryEntry()">💾 Сохранить</button>';
+  h += '<button onclick="hideMemoryForm()">Отмена</button>';
+  h += '</div></div>';
+
+  h += '<button class="primary" onclick="showMemoryForm()">New Entry</button>';
+
+  h += '<div id="memory-table"></div>';
+  $('#main').innerHTML = h;
+  renderMemory();
+}
+
+async function renderMemory() {
+  const container = $('#memory-table');
+  if (!container) return;
+  try {
+    const data = await get('/api/memory');
+    const entries = data.entries || [];
+
+    let h = '<table><thead><tr>';
+    h += '<th>Key</th><th>Tags</th><th>Content</th><th>Created</th><th style="width:80px">Actions</th>';
+    h += '</tr></thead><tbody>';
+
+    if (entries.length === 0) {
+      h += '<tr><td colspan="5" style="color:var(--muted);text-align:center">нет записей в памяти</td></tr>';
+    }
+
+    for (const e of entries) {
+      const created = e.created ? e.created.slice(0,16).replace('T',' ') : '---';
+      const tags = (e.tags || []).join(', ');
+      const preview = (e.value || '').slice(0, 100);
+      h += '<tr>';
+      h += '<td style="font-family:monospace;font-size:12px">' + esc(e.key) + '</td>';
+      h += '<td style="font-size:12px;color:var(--muted)">' + esc(tags) + '</td>';
+      h += '<td style="font-size:12px" title="' + esc(e.value || '') + '">' + esc(preview) + (e.value && e.value.length > 100 ? '...' : '') + '</td>';
+      h += '<td style="font-size:11px;color:var(--muted)">' + esc(created) + '</td>';
+      h += '<td>';
+      h += '<button onclick="editMemoryEntry(\'' + esc(e.key) + '\')" style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--fg);cursor:pointer;font-size:12px;margin-right:4px" title="Редактировать">✎</button>';
+      h += '<button onclick="deleteMemoryEntry(\'' + esc(e.key) + '\')" style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--red);cursor:pointer;font-size:12px" title="Удалить">✕</button>';
+      h += '</td></tr>';
+    }
+    h += '</tbody></table>';
+    container.innerHTML = h;
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--red)">ошибка загрузки: ' + esc(e.message) + '</div>';
+  }
+}
+
+function showMemoryForm(key) {
+  if (key !== undefined) {
+    editMemoryEntry(key);
+    return;
+  }
+  const card = $('#memory-form-card');
+  if (card) {
+    card.style.display = 'block';
+    $('#mem-key').value = '';
+    $('#mem-tags').value = '';
+    $('#mem-content').value = '';
+    window._editingMemoryKey = null;
+  }
+}
+
+function hideMemoryForm() {
+  const card = $('#memory-form-card');
+  if (card) card.style.display = 'none';
+  window._editingMemoryKey = null;
+}
+
+async function editMemoryEntry(key) {
+  const data = await get('/api/memory');
+  const entries = data.entries || [];
+  const entry = entries.find(e => e.key === key);
+
+  const card = $('#memory-form-card');
+  if (!card) return;
+  card.style.display = 'block';
+  const keyInput = $('#mem-key');
+  const tagsInput = $('#mem-tags');
+  const contentInput = $('#mem-content');
+
+  if (keyInput) {
+    keyInput.value = key || '';
+    if (key) keyInput.setAttribute('readonly', '');
+    else keyInput.removeAttribute('readonly');
+  }
+  if (tagsInput) tagsInput.value = (entry && entry.tags || []).join(', ');
+  if (contentInput) contentInput.value = (entry && entry.value) || '';
+  window._editingMemoryKey = key || null;
+}
+
+async function saveMemoryEntry() {
+  const key = $('#mem-key').value.trim();
+  const tagsRaw = $('#mem-tags').value;
+  const content = $('#mem-content').value.trim();
+  const existingKey = window._editingMemoryKey;
+
+  if (!key) return toast('Key обязателен', 'err');
+  if (!content) return toast('Content обязателен', 'err');
+
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  try {
+    if (existingKey) {
+      // Update existing entry via PUT
+      await fetch(API + '/api/memory/' + encodeURIComponent(existingKey), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, tags }),
+      });
+    } else {
+      // Create new entry via POST
+      await post('/api/memory', { key, content, tags });
+    }
+    hideMemoryForm();
+    renderMemory();
+    toast(existingKey ? 'обновлено: ' + existingKey : 'создано: ' + key);
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+async function deleteMemoryEntry(key) {
+  if (!confirm('Удалить запись "' + key + '"?')) return;
+  try {
+    const r = await fetch(API + '/api/memory/' + encodeURIComponent(key), { method: 'DELETE' });
+    if (!r.ok) { const j = await r.json(); toast(j.error || 'ошибка', 'err'); return; }
+    renderMemory();
+    toast('удалено: ' + key);
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
 // ===================================================================== EXPORT
 
 function exportAgent(name) {
@@ -1101,6 +1250,10 @@ setInterval(() => {
   if (tab === 'settings') {
     const ed = $('#agent-editor');
     if (ed && !['', 'none'].includes(ed.style.display)) return;
+  }
+  if (tab === 'memory') {
+    const card = $('#memory-form-card');
+    if (card && card.style.display !== 'none') return;
   }
   // For jobs tab, SSE handles updates, so we don't need polling
   if (tab === 'jobs') {
