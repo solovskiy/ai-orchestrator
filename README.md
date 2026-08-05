@@ -1,70 +1,69 @@
-# .ai — оркестрация CLI-агентов
+# .ai — CLI Agent Orchestration
 
-Инструментарий для делегирования задач кодовым AI-агентам. Claude Code выступает
-оркестратором, исполнители — внешние CLI (сейчас `opencode`).
+A toolchain for delegating tasks to coding AI agents. Claude Code acts as the
+orchestrator, with external CLIs as executors (currently `opencode`).
 
-Папка самодостаточна: путей наружу нет, состояние живёт внутри. Каталог можно
-целиком скопировать на другую машину.
+The folder is self-contained: no paths point outside, state lives inside. The
+directory can be copied to another machine in its entirety.
 
-Этот файл — «как» (команды, `--verify`, написание ТЗ). «Когда и что»
-делегировать (критерии исследование/код, NEVER/ASK/ALWAYS, troubleshooting
-зависшей задачи) — [`docs/workflow.md`](docs/workflow.md).
+This file covers "how" (commands, `--verify`, writing specs). "When and what" to
+delegate (research vs. coding criteria, NEVER/ASK/ALWAYS, hung-task
+troubleshooting) — [`docs/workflow.md`](docs/workflow.md).
 
-## Требования
+## Requirements
 
-- **Git Bash** (или любой bash) — запуск
-- **node** — разбор JSON (jq не нужен)
-- **opencode** в `PATH` — исполнитель по умолчанию
+- **Git Bash** (or any bash) — launcher
+- **node** — JSON parsing (jq not needed)
+- **opencode** in `PATH` — default executor
 
-Ни WSL, ни tmux не требуются. Подробнее о том, почему — в разделе
-«Почему без tmux».
+No WSL or tmux required. More on why in the "Why No tmux" section.
 
-## Установка
+## Installation
 
-Клонируется **один раз на машину**, в любое место — не в каждый проект.
-`--repo <path>` у `delegate`/`start` указывает на целевой проект отдельно,
-поэтому один `.ai` обслуживает сколько угодно проектов на этой машине.
+Clone **once per machine**, to any location — not into each project.
+`--repo <path>` on `delegate`/`start` points to the target project separately,
+so a single `.ai` serves any number of projects on that machine.
 
 ```bash
-git clone <URL-этого-репозитория> ~/tools/ai   # путь — любой, не обязан быть внутри проекта
+git clone <this-repo-url> ~/tools/ai   # any path, doesn't have to be inside a project
 ~/tools/ai/bin/agent init
 ```
 
-`init` делает две вещи:
-1. Ставит skill `agent-bridge` в `~/.claude/skills/agent-bridge/` — Claude Code
-   подхватывает его в любом проекте на этой машине без правки CLAUDE.md.
-   Абсолютный путь к `.ai` (`~/tools/ai` из примера выше) уже встроен в
-   команды внутри установленного skill — Claude не приходится его угадывать
-   или тратить вызовы на поиск.
-2. Деплоит все `agents/*.json` в `~/.config/opencode/agents/` — иначе
-   `opencode` не найдёт агента по имени вне самого `.ai`.
+`init` does two things:
+1. Installs the `agent-bridge` skill into `~/.claude/skills/agent-bridge/` —
+   Claude Code picks it up in any project on this machine without editing
+   CLAUDE.md. The absolute path to `.ai` (`~/tools/ai` from the example above)
+   is already baked into the commands inside the installed skill — Claude
+   doesn't have to guess it or spend calls searching for it.
+2. Deploys all `agents/*.json` into `~/.config/opencode/agents/` — otherwise
+   `opencode` won't find an agent by name outside of `.ai` itself.
 
-Готово — в любой другой сессии Claude Code на этой машине работает
-`.ai/bin/agent agent list` / `delegate` без дополнительной настройки.
-После правки `agents/*.json` (руками или через дашборд) шаг 2 нужно
-повторить — `agent init` (авто-редеплой при сохранении пока не сделан,
-см. `docs/ideas.md`).
+Done — in any other Claude Code session on this machine,
+`.ai/bin/agent agent list` / `delegate` works with no additional setup.
+After editing `agents/*.json` (manually or via the dashboard), step 2 must
+be repeated — `agent init` (auto-redeploy on save is not yet implemented,
+see `docs/ideas.md`).
 
-Опционально — расширенные критерии делегирования (`docs/workflow.md`) можно
-подключить в `CLAUDE.md` конкретного проекта строкой
-`@~/tools/ai/docs/workflow.md` (путь — тот, куда склонирован `.ai`);
-без этого шага делегирование всё равно работает, просто без
-NEVER/ASK/ALWAYS-чеклиста в контексте по умолчанию.
+Optionally — the extended delegation criteria (`docs/workflow.md`) can be
+included in a specific project's `CLAUDE.md` with the line
+`@~/tools/ai/docs/workflow.md` (path — wherever `.ai` was cloned);
+without this step, delegation still works, just without the
+NEVER/ASK/ALWAYS checklist in the default context.
 
-## Быстрый старт
+## Quick Start
 
-Рекомендуемый вход — `delegate`: один вызов вместо `start`→`wait`→`result`,
-capability вместо имени модели. Запускать целиком через фоновый Bash
-(`run_in_background: true`) — так харнесс сам пришлёт уведомление о
-завершении.
+The recommended entry point — `delegate`: one call instead of
+`start`→`wait`→`result`, capability instead of a model name. Always run as a
+background Bash (`run_in_background: true`) — the harness itself will send a
+completion notification.
 
 ```bash
-# --agent coding подставляет model/worktree из agents/coding.json —
-# конкретную модель не запоминай, она настраивается в дашборде/JSON
-# и может смениться; актуальная — `agent agent show coding` (см. «Capability / Agent» ниже).
-# --verify должен сам поднять окружение, иначе первый прогон в свежем
-# worktree гарантированно упадёт на "Cannot find module" по всему
-# проекту, а не только по файлам агента (см. «Перед --verify» ниже).
+# --agent coding substitutes model/worktree from agents/coding.json —
+# don't memorize the concrete model; it's configured in the dashboard/JSON
+# and can change; the current one — `agent agent show coding` (see "Capability / Agent" below).
+# --verify should set up the environment itself, otherwise the first run in a fresh
+# worktree is guaranteed to fail on "Cannot find module" across the whole
+# project, not just the agent's files (see "Before --verify" below).
 .ai/bin/agent delegate \
   --task rozetka-ui \
   --repo /d/work/vodovorot/server/erp_core \
@@ -72,211 +71,212 @@ capability вместо имени модели. Запускать целико
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
 
-# посмотреть все задачи
+# view all tasks
 .ai/bin/agent list
 
-# детали одной
+# details of one
 .ai/bin/agent status rozetka-ui-20260726-140000
 ```
 
-`delegate` уже печатает итоговый ответ агента в конце — отдельный `result`
-не нужен, но остаётся для точечного просмотра задачи, запущенной раньше.
+`delegate` already prints the agent's final answer at the end — a separate
+`result` is not needed, but remains available for spot-checking a task launched
+earlier.
 
-Нижний уровень (`start`+`wait`+`heal` по отдельности) никуда не делся —
-нужен, когда хочешь запустить несколько задач параллельно и не ждать
-каждую до конца одним вызовом.
+The lower level (`start`+`wait`+`heal` individually) hasn't gone anywhere —
+needed when you want to launch multiple tasks in parallel without waiting for
+each one to finish in a single call.
 
-## Команды
+## Commands
 
-| Команда | Назначение |
+| Command | Purpose |
 |---|---|
-| `delegate` | **рекомендуемый вход**: start + wait + (при необходимости) heal + result одним вызовом |
-| `start` | запустить задачу в фоне (возвращает управление сразу, без ожидания) |
-| `chat` | интерактивный чат с моделью в терминале (foreground, не фон); требует `--model` |
-| `send <id> "<текст>"` | продолжить сессию новой задачей |
-| `list` | таблица всех задач: модель, статус, проверка, время, стоимость |
-| `stats [--days N] [--json]` | агрегация стоимости и токенов: всего / по моделям / по capability |
-| `status <id>` | детали задачи; при провале проверки — хвост `verify.log`; показывает `autoCommitted`, `changedFiles`, `diagnosis` |
-| `tail <id> [n]` | последние строки вывода агента |
-| `wait <id>...` | ждать завершения задач(и); запускать в фоне — даёт уведомление (см. `docs/workflow.md`) |
-| `result <id>` | только итоговый ответ |
-| `kill <id>` | остановить |
-| `heal <id>` | одноразовое автовосстановление проваленной задачи (`validation_error`/`abandoned`) — отправляет структурированное сообщение в сессию (см. `diagnosis.json`, поле `outcome`); `delegate` вызывает это сам |
-| `worktree-gc` | безопасная уборка worktree-веток (только чистые + смердженные); без `--apply` — dry-run |
-| `clean [--days N]` | убрать задачи старше N дней (по умолч. 7) |
-| `remember <key> "<value>"` | запомнить факт в долговременную память |
-| `recall [<pattern>]` | найти факты по ключу/тегу/значению |
-| `forget <key>` | удалить факт |
-| `learn <jobId>` | извлечь знание из результата завершённой задачи |
+| `delegate` | **recommended entry point**: start + wait + (if needed) heal + result in one call |
+| `start` | launch a task in the background (returns immediately, no waiting) |
+| `chat` | interactive chat with the model in the terminal (foreground, not background); requires `--model` |
+| `send <id> "<text>"` | continue a session with a new task |
+| `list` | table of all tasks: model, status, check, time, cost |
+| `stats [--days N] [--json]` | cost and token aggregation: total / by model / by capability |
+| `status <id>` | task details; on check failure — tail of `verify.log`; shows `autoCommitted`, `changedFiles`, `diagnosis` |
+| `tail <id> [n]` | last lines of agent output |
+| `wait <id>...` | wait for task(s) to finish; run in background — provides notification (see `docs/workflow.md`) |
+| `result <id>` | final answer only |
+| `kill <id>` | stop |
+| `heal <id>` | one-shot auto-recovery of a failed task (`validation_error`/`abandoned`) — sends a structured message into the session (see `diagnosis.json`, `outcome` field); `delegate` calls this automatically |
+| `worktree-gc` | safe cleanup of worktree branches (only clean + merged); without `--apply` — dry-run |
+| `clean [--days N]` | remove tasks older than N days (default 7) |
+| `remember <key> "<value>"` | store a fact in long-term memory |
+| `recall [<pattern>]` | find facts by key/tag/value |
+| `forget <key>` | delete a fact |
+| `learn <jobId>` | extract knowledge from a completed task's result |
 
-Флаги `delegate`: `--timeout <сек>` (по умолч. 1800), `--no-heal` (не пытаться
-восстановить при провале).
+`delegate` flags: `--timeout <sec>` (default 1800), `--no-heal` (don't attempt
+recovery on failure).
 
-Флаги `start`: `--max-parallel <N>` / переменная `AGENT_MAX_PARALLEL`
-(по умолч. 3) — лимит одновременно выполняющихся задач. `--force` запускает
-сверх лимита.
+`start` flags: `--max-parallel <N>` / env var `AGENT_MAX_PARALLEL`
+(default 3) — limit on concurrently running tasks. `--force` launches
+above the limit.
 
-Также см. `agent dashboard` — локальный веб-интерфейс для просмотра задач,
-статистики и настройки агентов (открывается в браузере на localhost:9191).
+Also see `agent dashboard` — a local web UI for viewing tasks, statistics,
+and configuring agents (opens in a browser at localhost:9191).
 
-Полный список опций — `agent --help`.
+Full option list — `agent --help`.
 
 ## Capability / Agent
 
-`--agent <name>` (или `--capability` для обратной совместимости) у `start`
-и `delegate` подставляет model/worktree/variant/permissions/systemPrompt
-из `agents/<name>.json` — канонического JSON-формата `.ai`.
+`--agent <name>` (or `--capability` for backward compatibility) on `start`
+and `delegate` substitutes model/worktree/variant/permissions/systemPrompt
+from `agents/<name>.json` — `.ai`'s canonical JSON format.
 
-Ростер агентов не фиксирован в этом README и не хардкодится — он растёт
-(на 2026-08-05: `research`, `research-code`, `coding`, `coding-cheap`,
-`cop`), актуальный список с моделью/worktree/инструментами — команда, не
-таблица:
+The agent roster is not fixed in this README and is not hardcoded — it grows
+(as of 2026-08-05: `research`, `research-code`, `coding`, `coding-cheap`,
+`cop`); the current list with model/worktree/tools — a command, not a table:
 
 ```bash
-.ai/bin/agent agent list          # имя, модель, worktree да/нет, инструменты
-.ai/bin/agent agent show <name>   # полный JSON, включая description —
-                                   # там явно написано, когда взять соседний агент
-.ai/bin/agent agent create <name> # завести нового агента (заготовка в agents/<name>.json)
+.ai/bin/agent agent list          # name, model, worktree yes/no, tools
+.ai/bin/agent agent show <name>   # full JSON, including description —
+                                   # explicitly says when to pick a neighboring agent
+.ai/bin/agent agent create <name> # create a new agent (scaffold in agents/<name>.json)
 ```
 
-Общее правило по `worktree` (не зависит от конкретного имени): `нет` —
-агент только читает и пишет отчёт, `--repo` может быть любой папкой;
-`да` — агент коммитит в свою ветку, `--repo` обязан быть
-git-репозиторием (иначе `start` падает на «не git-репозиторий: `<path>`»
-ещё до запуска модели).
+General rule about `worktree` (independent of the specific name): `no` —
+agent only reads and writes a report, `--repo` can be any folder;
+`yes` — agent commits to its own branch, `--repo` must be a
+git repository (otherwise `start` fails with "not a git repository: `<path>`"
+before the model even launches).
 
-`agent init` генерирует из JSON opencode-совместимые `.md` файлы в
-`~/.config/opencode/agents/` для всех `agents/*.json` — после этого
-`opencode run --agent <name>` работает в любом проекте без копирования.
-Важно: это ручной шаг — правка `agents/<name>.json` (или сохранение через
-дашборд) не передеплоивает `.md` в global автоматически, нужно перезапускать
-`agent init` (см. `docs/ideas.md`, «агенты в других проектах исполняются
-по устаревшему конфигу»).
+`agent init` generates opencode-compatible `.md` files in
+`~/.config/opencode/agents/` for all `agents/*.json` — after that,
+`opencode run --agent <name>` works in any project without copying.
+Important: this is a manual step — editing `agents/<name>.json` (or saving via
+the dashboard) does not redeploy `.md` to global automatically; you must re-run
+`agent init` (see `docs/ideas.md`, "agents in other projects run with an
+outdated config").
 
-## Мультимодельность
+## Multi-Model
 
-Ниже уровня capability — модели по-прежнему определяют исполнителя
-автоматически через `--model`:
+Below the capability level — models still determine the executor
+automatically via `--model`:
 
-| Префикс модели | Runner | Статус |
+| Model prefix | Runner | Status |
 |---|---|---|
-| `opencode/*` | opencode | **production** — основной, battle-tested |
-| `opencode-go/*` | opencode | **production** — модели текущих агентов (`agents/*.json`) |
+| `opencode/*` | opencode | **production** — primary, battle-tested |
+| `opencode-go/*` | opencode | **production** — models of current agents (`agents/*.json`) |
 | `deepseek/*` | opencode | **production** |
 | `openai/*` | opencode | **production** |
 | `anthropic/*` | opencode | **production** |
-| `claude/*` | claude | **experimental** — не тестирован, cost tracking не реализован |
-| `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
-| `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
+| `claude/*` | claude | **experimental** — untested, cost tracking not implemented |
+| `gemini/*` | gemini | **experimental** — untested, CLI flags not verified |
+| `codex/*` | codex | **experimental** — parser mismatch (Codex does not emit JSON) |
 
-Дефолт, если ни `--model`, ни `--agent` не заданы —
-`opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, без логина). Можно
-задать и раннер явно: `--runner opencode --model claude/sonnet-4`.
+Default when neither `--model` nor `--agent` is specified —
+`opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, no login). You can also
+set the runner explicitly: `--runner opencode --model claude/sonnet-4`.
 
-Раннеры, кроме opencode — экспериментальные заглушки. Они корректно
-зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
-использованию**: адаптеры claude/gemini не тестированы на реальных задачах,
-а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
+Runners other than opencode are experimental stubs. They are correctly
+registered in `lib/models.json` and `lib/runners/`, but **not ready for
+use**: the claude/gemini adapters are untested on real tasks,
+and codex cannot read the output (Codex CLI does not emit a JSON stream).
 
-## Память
+## Memory
 
-Факты живут в `.ai/memory/index.json`. Доступны между любыми сессиями:
+Facts live in `.ai/memory/index.json`. Available across any sessions:
 
 ```bash
 .ai/bin/agent remember "project:db-name" "v96800_vodovorot" --tags "opencart,mysql"
-.ai/bin/agent recall "db"              # поиск
-.ai/bin/agent learn <jobId>            # извлечь из результата задачи
-.ai/bin/agent forget "project:db-name" # удалить
-.ai/bin/agent recall                   # показать всё
+.ai/bin/agent recall "db"              # search
+.ai/bin/agent learn <jobId>            # extract from a task result
+.ai/bin/agent forget "project:db-name" # delete
+.ai/bin/agent recall                   # show all
 ```
 
-## Как устроено
+## Architecture
 
 ```
 .ai/
-  bin/agent              CLI: delegate, start, worktree, отсоединённый запуск
-  lib/run-job.sh         обёртка, внутри которой живёт агент (авто-коммит, verify)
-  lib/agent.js           работа с JSON, разбор потока событий, вывод таблиц
-  lib/diagnosis.js       классификация провалов (outcome для heal)
-  lib/models.json        маппинг префикса модели → runner
-  lib/runners/*.js       адаптеры исполнителей (opencode, claude, gemini, codex)
-  lib/dashboard.js       веб-дашборд (HTTP API + сервер, localhost)
-  lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
-  agents/*.json          определения агентов (канонический JSON: model, variant,
+  bin/agent              CLI: delegate, start, worktree, detached launch
+  lib/run-job.sh         wrapper that hosts the agent (auto-commit, verify)
+  lib/agent.js           JSON handling, event stream parsing, table output
+  lib/diagnosis.js       failure classification (outcome for heal)
+  lib/models.json        model prefix → runner mapping
+  lib/runners/*.js       executor adapters (opencode, claude, gemini, codex)
+  lib/dashboard.js       web dashboard (HTTP API + server, localhost)
+  lib/dashboard.html     dashboard SPA interface (vanilla JS)
+  agents/*.json          agent definitions (canonical JSON: model, variant,
                           worktree, permissions, systemPrompt)
   lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
-  plugins/index.js       кастомные инструменты для opencode (git_commit)
-  .opencode/              конфиг + деплоенные агенты/плагины (генерируется)
-  hooks/                 PreToolUse-хуки: напоминание о делегировании
-  scripts/               разовые обслуживающие скрипты
-  backups/               резервные копии
-  test/                  юнит-/интеграционные тесты (agent-crud, dashboard-api,
+  plugins/index.js       custom tools for opencode (git_commit)
+  .opencode/             config + deployed agents/plugins (generated)
+  hooks/                 PreToolUse hooks: delegation reminders
+  scripts/               one-off maintenance scripts
+  backups/               backups
+  test/                  unit/integration tests (agent-crud, dashboard-api,
                           deploy-agent, diagnosis, diffStatusLines, pad)
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
-  memory/index.json      долговременная память (remember/recall)
+  memory/index.json      long-term memory (remember/recall)
 ```
 
-Отчёты research-агентов сюда не попадают — они сохраняются в
-`ai-research/` в корне **целевого проекта** (`--repo`), не в `.ai` (см.
-«Куда research-агенты кладут отчёт» ниже).
+Research agent reports do not land here — they are saved in
+`ai-research/` at the root of the **target project** (`--repo`), not inside
+`.ai` (see "Where research agents save reports" below).
 
-Три принципа, на которых всё держится:
+Three principles everything rests on:
 
-1. **ТЗ передаётся при запуске**, позиционным аргументом. Не «допечатывается»
-   после старта — иначе ломаются многострочные тексты.
-2. **Итог дописывает обёртка.** `run-job.sh` сама пишет код возврата в
-   `job.json`, поэтому статус достоверен, даже если оркестратор уже закрыт.
-3. **JSONL — единственный источник правды.** Статус, токены, стоимость и
-   `sessionId` берутся из потока событий, а не из разбора экранного вывода.
+1. **The spec is passed at launch**, as a positional argument. Not "appended"
+   after start — otherwise multi-line text breaks.
+2. **The result is finalized by the wrapper.** `run-job.sh` itself writes the
+   exit code to `job.json`, so status is reliable even if the orchestrator is
+   already closed.
+3. **JSONL is the single source of truth.** Status, tokens, cost, and
+   `sessionId` are taken from the event stream, not from parsing screen output.
 
-## Проверка (`--verify`)
+## Verification (`--verify`)
 
-Команда из `--verify` выполняется обёрткой **после** агента, в его рабочей
-директории. Вывод целиком уходит в `verify.log`, а в `job.json` попадает только
-вердикт. Смысл в том, чтобы прогон тестов не забивал контекст оркестратора —
-ему достаточно `passed` / `failed`.
+The command from `--verify` is executed by the wrapper **after** the agent, in
+its working directory. The full output goes to `verify.log`, and only the
+verdict goes into `job.json`. The point is that the test run shouldn't clog
+the orchestrator's context — `passed` / `failed` is enough.
 
-Если агент завершился с ошибкой, проверка не запускается (`skipped`).
+If the agent exits with an error, the check is not run (`skipped`).
 
-### Перед `--verify`: окружение worktree
+### Before `--verify`: worktree environment
 
-`--worktree` — это чистый `git checkout`. В нём нет `node_modules` и нет
-ничего сгенерированного в рантайме (Prisma-клиент, кодогенерация и т.п.),
-даже если в основном репозитории это уже стоит. Первый `--verify` в свежем
-worktree без установки зависимостей **упадёт на импортах по всему проекту**,
-а не только по файлам, которые тронул агент, — это ложный провал, не брак
-кода. Отличить легко: ошибки одинаковые в разных, независимых задачах и
-бьют по файлам, которых агент не касался.
+`--worktree` is a clean `git checkout`. It has no `node_modules` and nothing
+generated at runtime (Prisma client, codegen, etc.), even if those already
+exist in the main repository. The first `--verify` in a fresh worktree without
+installing dependencies **will fail on imports across the whole project**, not
+just on files the agent touched — that's a false failure, not broken code.
+It's easy to tell: errors are identical across different, unrelated tasks and
+hit files the agent never touched.
 
-Правило: `--verify` всегда начинается с установки окружения, специфичной
-для стека проекта — `npm install …` и, если есть, генерация клиента/схемы
-(`npx prisma generate` и т.п.). Не полагаться на то, что окружение «уже
-где-то есть» — worktree его не наследует.
+Rule: `--verify` always starts with environment setup specific to the
+project's stack — `npm install …` and, if applicable, client/schema generation
+(`npx prisma generate` etc.). Don't rely on the environment "already being
+there" — the worktree does not inherit it.
 
-## Авто-коммит в worktree
+## Auto-Commit in Worktree
 
-Если задача запущена с worktree (`--agent coding` или `--worktree`),
-обёртка `run-job.sh` в конце автоматически коммитит незакоммиченные
-изменения — на случай, если модель забыла сделать `git commit` сама.
-Сообщение коммита генерируется из `task`, `model` и первых строк
-`result.md`. Для задач БЕЗ worktree авто-коммит не делается (коммит
-в основную ветку — решение оркестратора, не автоматики).
+If a task is launched with a worktree (`--agent coding` or `--worktree`),
+the `run-job.sh` wrapper automatically commits uncommitted changes at the
+end — in case the model forgot to `git commit` itself.
+The commit message is generated from `task`, `model`, and the first lines of
+`result.md`. For tasks WITHOUT a worktree, auto-commit is skipped (committing
+to the main branch is the orchestrator's decision, not automation's).
 
-Флаг `autoCommitted` (true/false) виден в `agent status` и `job.json`.
-Если `autoCommitted: false` для worktree-задачи — либо изменений не было,
-либо авто-коммит не смог выполниться (проверить работу вручную:
-`git diff --stat` в worktree).
+The `autoCommitted` flag (true/false) is visible in `agent status` and
+`job.json`. If `autoCommitted: false` for a worktree task — either there were
+no changes, or the auto-commit couldn't execute (verify manually:
+`git diff --stat` in the worktree).
 
-## Диагностика провалов (`diagnosis.json`)
+## Failure Diagnosis (`diagnosis.json`)
 
-При не-success-исходе (`validation_error`, `permission_rejected`,
-`abandoned`, `error`, `no_events`) `agent.js finalize` пишет
-`diagnosis.json` в каталог задачи:
+On a non-success outcome (`validation_error`, `permission_rejected`,
+`abandoned`, `error`, `no_events`), `agent.js finalize` writes
+`diagnosis.json` into the task directory:
 
 ```json
 {
   "outcome": "validation_error",
-  "prompt": "текст запроса из потока событий",
+  "prompt": "text of the request from the event stream",
   "toolCalls": [
     {"tool": "write", "status": "error", "error": "invalid arguments: content is required"}
   ],
@@ -287,111 +287,112 @@ worktree без установки зависимостей **упадёт на 
 ```
 
 - `outcome` — `success | validation_error | permission_rejected | abandoned | error | no_events`
-- `toolCalls` — все вызовы инструментов с их статусами и ошибками
-- `lastErrorMessage` — текст последней ошибки
-- `textAfterLastError` — что модель написала после ошибки (если пыталась чинить сама)
-- `resumedAfterError` — boolean, чинилась ли модель сама после ошибки
+- `toolCalls` — all tool invocations with their statuses and errors
+- `lastErrorMessage` — text of the last error
+- `textAfterLastError` — what the model wrote after the error (if it tried to self-repair)
+- `resumedAfterError` — boolean, whether the model self-repaired after an error
 
-`agent heal` читает `diagnosis.json` и отправляет структурированное
-сообщение в ту же сессию для retry. `agent status` показывает outcome
-в строке диагноза.
+`agent heal` reads `diagnosis.json` and sends a structured message into the
+same session for retry. `agent status` shows the outcome in the diagnosis line.
 
-## Хуки и тесты
+## Hooks and Tests
 
-- **`hooks/`** — PreToolUse-хуки, которые подмешивают напоминания в контекст
-  оркестратора (не блокируют вызов):
-  - `research-delegation-reminder.js` — считает вызовы WebFetch/WebSearch
-    подряд; на 3-м напоминает делегировать многоисточниковое исследование
-  - `prefer-ai-agent-over-subagent.js` — перехватывает вызов встроенного
-    субагента Claude Code и предлагает использовать `.ai/bin/agent`
-    (дешевле, изолированный контекст)
-- **`test/`** — юнит-/интеграционные тесты на чистой Node (без внешних
-  зависимостей, `node test/<файл>.test.js`):
-  - `diagnosis.test.js` — классификация исходов задачи
-  - `diff-status-lines.test.js` — фильтрация изменений git diff с pre-status снимком
-  - `pad.test.js` — форматирование таблиц в CLI-выводе
-  - `deploy-agent.test.js` — JSON→YAML/markdown конвертация + freshness-check
-    (не перезаписывать `.md`, если он новее исходного `.json`)
-  - `agent-crud.test.js` — CLI create/list/show/delete для `agents/*.json`
-  - `dashboard-api.test.js` — HTTP API дашборда (`/api/jobs`, `/api/agents`,
-    `/api/stats` и т.д.), поднимает `createServer()` на случайном порту
+- **`hooks/`** — PreToolUse hooks that inject reminders into the
+  orchestrator's context (non-blocking):
+  - `research-delegation-reminder.js` — counts consecutive
+    WebFetch/WebSearch calls; on the 3rd one, reminds to delegate
+    multi-source research
+  - `prefer-ai-agent-over-subagent.js` — intercepts Claude Code's
+    built-in subagent call and suggests using `.ai/bin/agent`
+    (cheaper, isolated context)
+- **`test/`** — unit/integration tests on bare Node (no external
+  dependencies, `node test/<file>.test.js`):
+  - `diagnosis.test.js` — task outcome classification
+  - `diff-status-lines.test.js` — git diff change filtering with pre-status snapshot
+  - `pad.test.js` — table formatting in CLI output
+  - `deploy-agent.test.js` — JSON→YAML/markdown conversion + freshness-check
+    (don't overwrite `.md` if it's newer than the source `.json`)
+  - `agent-crud.test.js` — CLI create/list/show/delete for `agents/*.json`
+  - `dashboard-api.test.js` — dashboard HTTP API (`/api/jobs`, `/api/agents`,
+    `/api/stats`, etc.), spawns `createServer()` on a random port
 
-## Сколько деталей класть в ТЗ
+## How Much Detail to Put in a Spec
 
-Смысл делегирования — экономия токенов оркестратора. Она пропадает, если
-оркестратор перед `delegate` сам читает файлы, ищет номера строк и
-фактически решает задачу, а исполнителю остаётся только напечатать готовый
-ответ — тогда дешевле было сделать самому.
+The point of delegation is saving the orchestrator's tokens. That point is
+lost if the orchestrator, before `delegate`, reads files itself, looks up line
+numbers, and essentially solves the problem, leaving the executor only to print
+a ready-made answer — then it would have been cheaper to do it yourself.
 
-- **Не указывай номера строк, точные сигнатуры функций, «где что лежит»**,
-  если это не единственный способ разрешить неоднозначность. У
-  исполнителя есть свой `read`/`grep`/`glob` бюджет специально для этого —
-  задача ТЗ дать цель и ограничения, а не пошаговую инструкцию с
-  результатом собственного ресёрча оркестратора.
-- **Указывай то, что дешевле сказать, чем найти заново**: какому паттерну
-  следовать (файл-образец, а не его содержимое), формат/структуру отчёта
-  для research-агента, критерий готовности («тесты зелёные», «отчёт
-  содержит X, Y, Z»), явные ограничения скоупа («не трогай миграции»).
-- Признак, что ТЗ слишком детальное: если переписать промпт как готовый
-  diff/текст отчёта — исполнитель не нужен, экономия исчезла. Признак, что
-  слишком скудное: агент не может определить критерий «готово» без
-  дополнительного вопроса — тогда он либо угадывает, либо встаёт, ждать
-  ответа в headless-режиме он не может (см. «Продолжить сессию» выше).
-- Ниже — не про объём, а про конкретные форматные ловушки, которые ловили
-  дважды: пути, ссылки на незакоммиченные файлы, молчаливая сдача на
-  первой ошибке, доверие `verify: passed` без диффа.
+- **Don't specify line numbers, exact function signatures, "where things
+  live"**, unless it's the only way to resolve ambiguity. The executor has its
+  own `read`/`grep`/`glob` budget specifically for that — the spec's job is to
+  give the goal and constraints, not step-by-step instructions resulting from
+  the orchestrator's own research.
+- **Specify what's cheaper to say than to rediscover**: which pattern to
+  follow (a sample file, not its content), report format/structure for a
+  research agent, acceptance criteria ("tests green", "report contains X, Y,
+  Z"), explicit scope constraints ("don't touch migrations").
+- A sign the spec is too detailed: if you could rewrite the prompt as a
+  ready-made diff/report text — the executor is unnecessary, the savings
+  disappeared. A sign it's too sparse: the agent can't determine the "done"
+  criterion without an additional question — then it either guesses or stalls;
+  it can't wait for an answer in headless mode (see "Continue a session"
+  above).
+- Below — not about volume, but about specific format pitfalls caught twice:
+  paths, references to uncommitted files, silently giving up on the first
+  error, trusting `verify: passed` without a diff.
 
-**Куда research-агенты кладут отчёт** — уже зафиксировано в их
-`systemPrompt` (`agents/research.json`/`research-code.json`): всегда
-`ai-research/<файл>.md` в корне целевого `--repo`, папка создаётся
-агентом сама. Указывать путь в ТЗ не нужно — это тот случай, когда
-конвенция экономит строку в каждом промпте. Если нужен отчёт вне этой
-папки (редко) — переопредели явно. Важно: `ai-research/` создаётся
-**внутри `--repo` (целевого проекта)**, а не внутри `.ai` — если кто-то
-подключил `.ai` в свой проект как инструмент, его собственные отчёты не
-должны утекать в директорию инструмента.
+**Where research agents save reports** — already fixed in their
+`systemPrompt` (`agents/research.json`/`research-code.json`): always
+`ai-research/<file>.md` at the root of the target `--repo`; the folder is
+created by the agent itself. There's no need to specify the path in the
+spec — this is the case where a convention saves a line in every prompt. If
+you need a report outside this folder (rare) — override explicitly. Important:
+`ai-research/` is created **inside `--repo` (the target project)**, not inside
+`.ai` — if someone includes `.ai` in their own project as a tool, their own
+reports shouldn't leak into the tool directory.
 
-## Написание ТЗ — обязательные правила
+## Writing Specs — Mandatory Rules
 
-Открыто по факту двух провалов на erp_core 2026-07-26 (задача формально
-`completed`/`verify: passed`, а `git diff --stat` в worktree — пустой,
-агент не сделал ничего). Причины и правила:
+Discovered from two failures on erp_core on 2026-07-26 (task formally
+`completed`/`verify: passed`, but `git diff --stat` in the worktree — empty,
+the agent did nothing). Causes and rules:
 
-1. **Пути в ТЗ — только относительные.** Модель-исполнитель иногда сама
-   домысливает абсолютный путь к ОСНОВНОМУ чек-ауту репозитория (например
-   `D:\work\vodovorot\server\erp_core\...`) вместо своей рабочей директории
-   worktree — и такие обращения тихо отклоняются песочницей
-   (`external_directory`, `auto-rejecting`, без запроса к человеку в
-   безголовом режиме). Внешне это выглядит как нормальное завершение с
-   пустым результатом. Пиши в каждом ТЗ явно: «пути относительные, не
-   строй сам абсолютный путь к другому чек-ауту — он недоступен».
+1. **Paths in the spec — relative only.** The executor model sometimes
+   fabricates an absolute path to the MAIN checkout of the repository (e.g.
+   `D:\work\vodovorot\server\erp_core\...`) instead of its worktree working
+   directory — and such accesses are silently rejected by the sandbox
+   (`external_directory`, `auto-rejecting`, without prompting a human in
+   headless mode). Outwardly, this looks like normal completion with an empty
+   result. Write explicitly in every spec: "paths are relative; don't
+   construct an absolute path to another checkout — it is inaccessible."
 
-2. **Всё, на что ссылается ТЗ, должно быть уже закоммичено** в тот `base
-   ref`, от которого ответвляется worktree (обычно `master`). Ссылка на
-   файл, который существует только в незакоммиченном виде в другой рабочей
-   копии (в т.ч. в другом worktree), гарантированно провалится — worktree
-   агента ветвится от git-истории, а не копирует чужую рабочую директорию.
-   Перед `agent start` — проверить `git status`/`git log` на упомянутые
-   в ТЗ файлы.
+2. **Everything referenced by the spec must already be committed** in the
+   `base ref` from which the worktree branches (usually `master`). A reference
+   to a file that only exists as uncommitted in another working copy
+   (including another worktree) is guaranteed to fail — the agent's worktree
+   branches from git history, not from copying someone else's working
+   directory. Before `agent start` — check `git status`/`git log` for files
+   mentioned in the spec.
 
-3. **Требуй явно: не сдаваться молча на первой ошибке чтения.** Без этой
-   строки модель-исполнитель (замечено на DeepSeek через opencode) может
-   остановиться после первого же отклонённого/неудачного вызова, не
-   попробовав альтернативный путь и не оставив никакого текстового ответа.
-   Формулировка вроде «если файл не открылся — ищи иначе или продолжай на
-   основе того, что удалось прочитать; в конце всегда дай текстовое резюме
-   что сделано/не сделано» — ощутимо снижает шанс тихого проигрыша.
+3. **Explicitly require: don't silently give up on the first read error.**
+   Without this line, the executor model (observed with DeepSeek via opencode)
+   may stop after the very first rejected/failed call, without trying an
+   alternative path and without leaving any textual response. A phrase like
+   "if a file doesn't open — search differently or proceed based on what you
+   managed to read; always provide a textual summary of what was done/not
+   done at the end" — measurably reduces the chance of a silent loss.
 
-4. **После получения `verify: passed` — всегда проверять `git diff --stat`
-   в worktree, а не только статус.** `verify: passed` при нулевом дифе —
-   не признак успеха, а признак того, что тесты прогонялись на
-   неизменённом коде. Единственный надёжный сигнал, что агент реально
-   поработал, — непустой диф, соответствующий ожидаемым файлам из ТЗ.
+4. **After receiving `verify: passed` — always check `git diff --stat` in the
+   worktree, not just the status.** `verify: passed` with a zero diff — is not
+   a sign of success, but a sign that tests ran against unchanged code. The
+   only reliable signal that the agent actually did work — a non-empty diff
+   matching the expected files from the spec.
 
-## Смена исполнителя
+## Switching Executors
 
-Интерфейс `agent` от исполнителя не зависит. Чтобы добавить нового, нужен один
-файл в `lib/runners/` с тремя вещами:
+The `agent` interface is executor-agnostic. To add a new one, you need one
+file in `lib/runners/` with three things:
 
 ```js
 module.exports = {
@@ -401,34 +402,35 @@ module.exports = {
 };
 ```
 
-Дальше `--runner <name>`. В `job.json` пишется, каким исполнителем задача была
-выполнена, — старые задачи остаются читаемыми после смены.
+Then `--runner <name>`. The `job.json` records which executor ran the
+task — old tasks remain readable after a switch.
 
-Важно: различаются не только флаги, но и **возможности**. У исполнителя без
-продолжения сессии `send` работать не будет — это не чинится слоем абстракции.
+Important: it's not just flags that differ, but **capabilities**. For an
+executor without session continuation, `send` won't work — this can't be fixed
+by an abstraction layer.
 
-### Про ACP
+### About ACP
 
-[Agent Client Protocol](https://agentclientprotocol.com/) — стандарт, который
-поддерживают многие агенты, включая opencode (`opencode acp`). Он мог бы стать
-одним адаптером сразу на всех.
+[Agent Client Protocol](https://agentclientprotocol.com/) — a standard supported
+by many agents, including opencode (`opencode acp`). It could become a single
+adapter for all of them at once.
 
-Сейчас не используется намеренно: ACP — это живая JSON-RPC сессия поверх stdio
-с обратными вызовами, то есть постоянно живущий процесс. Это плохо ложится на
-модель «вызов инструмента в рамках хода» и возвращает ту сложность, ради ухода
-от которой всё и затевалось.
+Currently not used, deliberately: ACP is a live JSON-RPC session over stdio
+with callbacks, i.e. a persistently running process. This maps poorly onto the
+"tool call within a turn" model and brings back the complexity that the whole
+thing was designed to escape.
 
-## Почему без tmux
+## Why No tmux
 
-Готовые оркестраторы (например `codex-orchestrator`) держат агентов в tmux —
-но только потому, что оборачивают **TUI-приложения**, которым нужен
-псевдотерминал. Отсюда у них и обёртка `script`, и чистка ANSI-кодов.
+Ready-made orchestrators (e.g. `codex-orchestrator`) keep agents in tmux —
+but only because they wrap **TUI applications** that need a pseudo-terminal.
+Hence their `script` wrapper and ANSI code scrubbing.
 
-`opencode run --format json` — обычный пакетный процесс с чистым JSONL на
-выходе. Вся эта прослойка не нужна, а вместе с ней отпадает и требование WSL
-на Windows.
+`opencode run --format json` is a regular batch process with clean JSONL
+output. That entire layer is unnecessary, and with it goes the WSL requirement
+on Windows.
 
-Устойчивость при этом не страдает: она держится не на живучести процесса, а на
-том, что состояние лежит на диске — лог, `sessionId`, история сессии внутри
-самого opencode. Даже убитую задачу видно, докуда она дошла, и можно
-продолжить через `send`. Перезагрузку машины это переживает, а tmux — нет.
+Resilience doesn't suffer: it's based not on process liveness, but on the fact
+that state lives on disk — log, `sessionId`, session history inside opencode
+itself. Even a killed task is visible up to where it got, and can be continued
+via `send`. This survives a machine reboot; tmux doesn't.
