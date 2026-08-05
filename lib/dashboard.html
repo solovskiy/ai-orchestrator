@@ -672,7 +672,7 @@ async function loadStats() {
 
   // by agent
   h += '<div class="card"><h3>По агентам</h3><table><thead><tr><th>Агент</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
-  for (const [cap, d] of Object.entries(s.byCapability || {})) {
+  for (const [cap, d] of Object.entries(s.byAgent || {})) {
     h += '<tr><td>' + esc(cap) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
   }
   h += '</tbody></table></div>';

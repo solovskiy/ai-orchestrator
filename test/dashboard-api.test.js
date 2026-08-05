@@ -528,7 +528,7 @@ async function runTests() {
     assert.ok(typeof r.json.all.completed === 'number', 'completed должен быть числом');
     assert.ok(typeof r.json.all.failed === 'number', 'failed должен быть числом');
     assert.ok(r.json.byModel, 'должен быть byModel');
-    assert.ok(r.json.byCapability, 'должен быть byCapability');
+    assert.ok(r.json.byAgent, 'должен быть byAgent');
   });
 
   // ---------------------------------------------------------------- capabilities
