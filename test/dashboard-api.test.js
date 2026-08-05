@@ -6,6 +6,7 @@ const path = require('node:path');
 const { createServer } = require('../lib/dashboard.js');
 
 const AGENTS_DIR = path.join(__dirname, '..', 'agents');
+const os = require('node:os');
 
 let passed = 0;
 let failed = 0;
@@ -217,6 +218,55 @@ async function runTests() {
     // (createServer() использует настоящий AGENTS_DIR, не временную директорию)
     try { fs.unlinkSync(testAgentFile); } catch {}
     try { fs.unlinkSync(testAgentMd); } catch {}
+  }
+
+  // ---------------------------------------------------------------- agent save → global deploy
+
+  const testGlobalAgentName = 'test-global-deploy';
+  const testGlobalAgentFile = path.join(AGENTS_DIR, testGlobalAgentName + '.json');
+  const testGlobalAgentMd = path.join(AGENTS_DIR, '..', '.opencode', 'agents', testGlobalAgentName + '.md');
+  const origHome = process.env.HOME;
+  let tmpHomeDir;
+
+  try {
+    // Создаём временный HOME и направляем глобальный деплой туда
+    tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-dashboard-global-home-'));
+    process.env.HOME = tmpHomeDir;
+
+    await test('POST /api/agents/:name — деплоит .md в глобальную ~/.config/opencode/agents/', async () => {
+      const r = await req('POST', `/api/agents/${testGlobalAgentName}`, {
+        name: testGlobalAgentName,
+        description: 'Глобальный тестовый агент',
+        model: 'deepseek/deepseek-v4-pro',
+        variant: 'medium',
+        worktree: false,
+        systemPrompt: 'Глобальный промпт.',
+        permissions: { bash: 'allow', read: 'allow' },
+      });
+      assert.strictEqual(r.status, 200, `должен быть 200: ${r.body}`);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(r.json.deployed, true, 'должен быть авто-деплой .md');
+
+      // Локальный .md должен существовать
+      assert.ok(fs.existsSync(testGlobalAgentMd), `должен существовать локальный ${testGlobalAgentMd}`);
+
+      // Глобальный .md должен существовать во временном HOME
+      const globalMd = path.join(tmpHomeDir, '.config', 'opencode', 'agents', testGlobalAgentName + '.md');
+      assert.ok(fs.existsSync(globalMd), `должен существовать глобальный ${globalMd}`);
+
+      const mdContent = fs.readFileSync(globalMd, 'utf8');
+      assert.ok(mdContent.startsWith('---'), 'должен быть YAML frontmatter');
+      assert.ok(mdContent.includes('description: Глобальный тестовый агент'), 'должен быть description');
+      assert.ok(mdContent.includes('model: deepseek/deepseek-v4-pro'), 'должна быть модель');
+      assert.ok(mdContent.endsWith('Глобальный промпт.\n'), 'должен быть systemPrompt в теле');
+    });
+
+  } finally {
+    // Восстанавливаем реальный HOME и чистим временные файлы
+    process.env.HOME = origHome;
+    try { fs.rmSync(tmpHomeDir, { recursive: true, force: true }); } catch {}
+    try { fs.unlinkSync(testGlobalAgentFile); } catch {}
+    try { fs.unlinkSync(testGlobalAgentMd); } catch {}
   }
 
   // ---------------------------------------------------------------- agent export
