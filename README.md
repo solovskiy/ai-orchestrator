@@ -18,6 +18,26 @@ troubleshooting) — [`docs/workflow.md`](docs/workflow.md).
 
 No WSL or tmux required. More on why in the "Why No tmux" section.
 
+### Authentication (API keys)
+
+This repository never stores API keys — it only holds `agents/*.json`
+(model names, no credentials). Keys live in `opencode`'s own config,
+outside this repo entirely:
+
+```bash
+opencode auth login      # interactive: pick a provider, paste your key
+opencode auth list       # see what's already configured
+```
+
+The default free model (`opencode/deepseek-v4-flash-free`, OpenCode Zen)
+needs no login at all. Paid providers (OpenRouter, etc.) need `auth login`
+once per machine — after that, every project using this `.ai` install picks
+it up automatically, nothing project-specific to configure. Never paste a
+raw key into a prompt, a committed file, or a Claude Code permission
+allowlist (`.claude/settings.local.json`) — that file is gitignored but
+still plaintext on disk; `opencode auth` keeps it out of this repo's reach
+entirely.
+
 ## Installation
 
 Clone **once per machine**, to any location — not into each project.
