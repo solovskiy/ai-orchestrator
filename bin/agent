@@ -635,36 +635,6 @@ cmd_worktree_gc() {
   agent_js worktree-gc "$(winpath "$repo")" "$apply"
 }
 
-cmd_remember() {
-  local key="" value="" tags="" source=""
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --tags)   tags="${2:-}"; shift 2 ;;
-      --source) source="${2:-}"; shift 2 ;;
-      -h|--help) echo "agent remember <key> \"<value>\" [--tags a,b,c] [--source <jobId>]"; return 0 ;;
-      *)
-        if [[ -z "$key" ]]; then key="$1"; shift
-        elif [[ -z "$value" ]]; then value="$1"; shift
-        else die "лишний аргумент: $1"
-        fi ;;
-    esac
-  done
-  [[ -n "$key" ]]   || die "нужен key"
-  [[ -n "$value" ]] || die "нужен value"
-
-  agent_js remember "key=$key" "value=$value" ${tags:+"tags=$tags"} ${source:+"source=$source"}
-}
-
-cmd_recall() {
-  local pattern="${1:-}"
-  agent_js recall "$pattern"
-}
-
-cmd_forget() {
-  [[ -n "${1:-}" ]] || die "нужен key"
-  agent_js forget "$1"
-}
-
 cmd_learn() {
   local id="${1:-}"
   [[ -n "$id" ]] || die "нужен jobId"
@@ -797,9 +767,6 @@ main() {
     wait)    cmd_wait "$@" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
                || echo "(результата ещё нет)" ;;
-    remember) cmd_remember "$@" ;;
-    recall)  cmd_recall "$@" ;;
-    forget)  cmd_forget "$@" ;;
     learn)   cmd_learn "$@" ;;
     stats)   agent_js stats "$JOBS_DIR" "$*" ;;
     capability) agent_js capability "${1:-}" ;;
