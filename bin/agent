@@ -66,8 +66,7 @@ agent — оркестрация CLI-агентов как фоновых зад
   --prompt <text>        ТЗ строкой
                          (если ни того ни другого — читается со stdin)
   --capability <name>    research | coding (синоним --agent) — подставляет
-                         model/worktree из agents/<name>.json (v3; fallback —
-                         capabilities/<name>/capability.json, устарело)
+                         model/worktree из agents/<name>.json
   --worktree             создать git worktree под задачу и работать в нём
   --variant <level>      уровень усилия: minimal, low, medium, high, max
                          (по умолчанию из agents/<name>.json; переопределяет)
@@ -168,26 +167,11 @@ cmd_start() {
     local cap_model="" cap_worktree="" cap_variant="" cap_runner=""
 
     # Try dashboard first → local agents/<name>.json (v3)
-    # agent-read при недоступности и дашборда, и локального файла падает с
-    # кодом ошибки — тогда пробуем capabilities/<name>/capability.json (v2).
-    local read_ok=0
     local read_output
     if read_output="$(agent_js agent-read "$capability" 2>/dev/null)"; then
-      read_ok=1
       { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; } <<< "$read_output"
     else
-      local cap_file="$AI_HOME/capabilities/$capability/capability.json"
-      if [[ -f "$cap_file" ]]; then
-        read_ok=1
-        # v2: capabilities/<name>/capability.json (обратная совместимость, нет поля runner)
-        { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; } \
-          < <(agent_js capability "$capability") \
-          || die "capability: не удалось прочитать $capability"
-      fi
-    fi
-
-    if (( ! read_ok )); then
-      die "неизвестный агент/capability: $capability (нет в дашборде (${AI_DASHBOARD_URL:-http://localhost:9191}), нет agents/$capability.json, нет capabilities/$capability/capability.json)"
+      die "неизвестный агент/capability: $capability (нет в дашборде (${AI_DASHBOARD_URL:-http://localhost:9191}), нет agents/$capability.json)"
     fi
 
     [[ -n "$model" ]] || model="$cap_model"

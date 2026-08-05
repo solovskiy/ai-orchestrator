@@ -204,7 +204,6 @@ git-репозиторием (иначе `start` падает на «не git-р
   lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
   agents/*.json          определения агентов (канонический JSON: model, variant,
                           worktree, permissions, systemPrompt)
-  capabilities/*/        (устарело, миграция в agents/)
   lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
   plugins/index.js       кастомные инструменты для opencode (git_commit)
   .opencode/              конфиг + деплоенные агенты/плагины (генерируется)

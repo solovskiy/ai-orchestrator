@@ -65,7 +65,6 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
     agents/              деплоированные агенты (генерируется)
     plugins/             деплоированные плагины (генерируется)
     opencode.json        конфиг opencode с путём к плагинам
-  capabilities/*/        (устарело, миграция в agents/)
   hooks/                 PreToolUse-хуки (напоминания о делегировании)
   test/                  юнит-тесты (diagnosis, diffStatusLines)
   scripts/               разовые обслуживающие скрипты
