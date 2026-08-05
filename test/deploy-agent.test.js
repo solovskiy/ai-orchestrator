@@ -267,7 +267,7 @@ test('toOpenCodeMd — permissions == null (не должны появиться
   assert.ok(!md.includes('permission'));
 });
 
-// ==================================================================== freshness-check (интеграционные)
+// ==================================================================== интеграционные: деплой в --target
 
 const DEPLOY_AGENT_JS = path.join(__dirname, '..', 'lib', 'deploy-agent.js');
 
@@ -305,15 +305,17 @@ test('freshness — первый запуск создаёт .md файл', () =
   assert.ok(fs.existsSync(outFile), '.md файл должен быть создан');
 });
 
-test('freshness — второй запуск без изменений пропускает запись', () => {
+test('freshness — второй запуск без изменений перезаписывает .md (без freshness-check)', () => {
   const outFile = path.join(tmpTargetDir, '.opencode', 'agents', 'freshness-test.md');
   const mtimeBefore = fs.statSync(outFile).mtimeMs;
 
   const out = deploy([tmpAgentsDir, 'freshness-test', '--target', tmpTargetDir]);
-  assert.ok(out.includes('уже актуален'), `вывод должен содержать "уже актуален": ${out}`);
+  assert.ok(out.includes('deploy-agent:'), `вывод должен содержать deploy-agent: ${out}`);
+  assert.ok(!out.includes('уже актуален'), 'повторный запуск не должен выводить "уже актуален"');
 
   const mtimeAfter = fs.statSync(outFile).mtimeMs;
-  assert.strictEqual(mtimeAfter, mtimeBefore, 'mtime .md не должен измениться при повторе');
+  assert.ok(mtimeAfter > mtimeBefore,
+    'mtime .md должен обновиться при повторе — .md перегенерируется всегда');
 });
 
 test('freshness — после изменения .json .md перезаписывается', () => {
