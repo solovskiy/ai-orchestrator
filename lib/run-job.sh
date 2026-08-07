@@ -71,7 +71,13 @@ export AGENT_BROWSER_SESSION="$(basename "$JOB_DIR")"
 # того, как её тронет MCP-слой — не убирать этот шаг, даже если кажется
 # лишним «дополнительным» вызовом.
 if command -v agent-browser >/dev/null 2>&1; then
-  timeout 30 agent-browser open about:blank >/dev/null 2>&1 || true
+  # ВАЖНО: cd в $CWD обязателен — agent-browser резолвит относительные пути
+  # (--path у screenshot и т.п.) от cwd процесса, который его прогрел/держит
+  # демон. Без явного cd здесь демон получает cwd самого run-job.sh, а не
+  # репозитория задачи — задача в другом репозитории (не .ai) получает
+  # «Системе не удается найти указанный путь» на сохранении скриншота
+  # (найдено на testing-smoke-plumb, --repo plumb_tools).
+  ( cd "$CWD" && timeout 30 agent-browser open about:blank >/dev/null 2>&1 ) || true
 fi
 
 # --- собственно агент: stdout -> JSONL, stderr отдельно ---
