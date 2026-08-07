@@ -131,6 +131,52 @@ label .tip { font-weight: normal; }
 .sess-empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
 .sess-error { color: var(--red); font-size: 12px; }
 .sess-section-label { font-size: 11px; color: var(--muted); margin: 6px 0 2px 0; text-transform: uppercase; }
+/* agent editor sections */
+.ae-section {
+  background: var(--row-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.ae-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.ae-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.ae-full { grid-column: 1 / -1; }
+.ae-section label { margin-top: 0; }
+/* MCP checkboxes */
+.mcp-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.mcp-item {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; cursor: pointer; user-select: none;
+  background: var(--card); transition: background .1s;
+}
+.mcp-item:hover { background: var(--row-hover); }
+.mcp-item.checked { background: var(--accent-bg); border-color: var(--accent); }
+.mcp-item input[type=checkbox] { display: none; }
+.mcp-item .mcp-checked-icon { color: var(--accent); font-weight: bold; display: none; }
+.mcp-item.checked .mcp-checked-icon { display: inline; }
+.mcp-item .mcp-name { color: var(--fg); }
+.mcp-item .mcp-disabled-tag { color: var(--muted); font-size: 10px; }
+.mcp-item .mcp-stale-tag { color: var(--yellow); font-size: 10px; }
+.mcp-item.mcp-stale { border-style: dashed; opacity: 0.8; }
+.mcp-item.mcp-stale.checked { opacity: 1; }
+/* agent cards layout */
+.agent-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.agent-card-inner { cursor: pointer; }
+/* editor card */
+#agent-editor { max-width: 860px; }
+#agent-editor h3 { margin-bottom: 12px; font-size: 15px; }
+.ae-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+textarea { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
 </style>
 
 <!-- xterm.js CDN -->
@@ -782,17 +828,19 @@ async function loadSettings() {
   let h = '';
 
   // Карточки агентов
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px">';
+  h += '<div class="agent-cards">';
   for (const a of agents) {
     const pulse = a.running > 0 ? '<span class="pulse" style="color:var(--green);font-size:11px">● ' + a.running + ' running</span>' : '<span style="color:var(--muted);font-size:11px">○ idle</span>';
     const tools = Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(', ');
-    h += '<div class="card agent-card" onclick="editAgent(\'' + esc(a.name) + '\')">';
+    const mcpBadges = (a.mcp || []).map(function(s) { return '<span style="background:var(--accent-bg);color:var(--accent);font-size:10px;padding:1px 5px;border-radius:3px">' + esc(s) + '</span>'; }).join(' ');
+    h += '<div class="card agent-card agent-card-inner" onclick="editAgent(\'' + esc(a.name) + '\')">';
     h += '<div style="display:flex;justify-content:space-between;align-items:center">';
-    h += '<strong>' + esc(a.name) + '</strong> <span style="font-size:11px;color:var(--muted)">' + esc(a.mode) + '</span>';
+    h += '<strong style="font-size:14px">' + esc(a.name) + '</strong> <span style="font-size:11px;color:var(--muted)">' + esc(a.mode) + '</span>';
     h += '</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin:4px 0">' + esc(a.runner || 'auto') + ' / ' + esc(a.model.split('/').pop()) + ' · variant: ' + esc(a.variant || '---') + ' · worktree: ' + (a.worktree ? '✓' : '✗') + '</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin:3px 0">' + esc(a.runner || 'auto') + ' / ' + esc(a.model.split('/').pop()) + ' · variant: ' + esc(a.variant || '---') + ' · worktree: ' + (a.worktree ? '✓' : '✗') + '</div>';
     h += '<div style="font-size:11px;color:var(--muted)">tools: ' + esc(tools.slice(0, 50)) + (tools.length > 50 ? '...' : '') + '</div>';
-    h += '<div style="margin-top:4px;display:flex;justify-content:space-between;align-items:center">' + pulse;
+    if (mcpBadges) h += '<div style="font-size:11px;color:var(--muted);margin-top:2px">mcp: ' + mcpBadges + '</div>';
+    h += '<div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">' + pulse;
     h += '<span><button class="primary" style="font-size:11px;padding:2px 10px;margin:0" onclick="event.stopPropagation();testRun(\'' + esc(a.name) + '\')">▶ Run</button></span>';
     h += '</div>';
     h += '</div>';
@@ -801,13 +849,17 @@ async function loadSettings() {
 
   // Новый агент
   h += '<div class="card"><h3>Создать агента</h3>';
-  h += '<input type="text" id="new-agent-name" placeholder="имя (латиница, дефисы)" style="width:200px;display:inline"> ';
+  h += '<input type="text" id="new-agent-name" placeholder="имя (латиница, дефисы)" style="width:240px;display:inline"> ';
   h += '<button class="primary" onclick="createAgent()" style="margin-top:0">Создать</button>';
   h += '</div>';
 
   // Редактор (скрыт, показывается при клике)
   h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+
+  // --- Секция: Модель и раннер ---
+  h += '<div class="ae-section">';
+  h += '<div class="ae-section-title">Модель и раннер</div>';
+  h += '<div class="ae-grid">';
   h += '<div><label>Раннер ' + tip('Какой CLI выполняет задачу. opencode — шлюз ко многим моделям разных провайдеров. claude/codex/gemini — конкретный CLI со своим фиксированным каталогом моделей.') + '</label><select id="ae-runner" onchange="onRunnerSelect()"></select></div>';
   h += '<div><label>Модель ' + tip('Выбери из списка или введи свою. Список зависит от раннера слева. 🔄 — обновить из opencode models (только для раннера opencode).') + '</label><div style="display:flex;gap:4px"><select id="ae-model" onchange="onModelSelect()" style="flex:1"></select><button onclick="refreshModels();return false" title="Обновить список из opencode" style="padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:5px;cursor:pointer">🔄</button></div><input type="text" id="ae-model-custom" placeholder="или введи свою модель" style="display:none;margin-top:4px;width:100%"></div>';
   h += '<div><label>Variant ' + tip('Уровень reasoning: minimal, low, medium, high, max. Выше = умнее но дороже. medium для кода, high для ресёрча.') + '</label><select id="ae-variant">';
@@ -815,15 +867,39 @@ async function loadSettings() {
   h += '</select></div>';
   h += '<div><label>Mode ' + tip('primary — в Tab-цикле opencode. subagent — только по @имени. all — везде.') + '</label><select id="ae-mode"><option>primary</option><option>subagent</option><option>all</option></select></div>';
   h += '<div><label>Temperature ' + tip('Креативность: 0.0 = строго по факту, 1.0 = максимально креативно. Код/анализ: 0-0.2, креатив: 0.5-1.0') + '</label><input type="text" id="ae-temp" placeholder="0.2"></div>';
+  h += '</div></div>';
+
+  // --- Секция: Поведение ---
+  h += '<div class="ae-section">';
+  h += '<div class="ae-section-title">Поведение</div>';
+  h += '<div class="ae-grid">';
   h += '<div><label>Worktree ' + tip('Да — агент в изолированной git-ветке (изменения не в основную ветку). Нет — прямо в репозитории. Для кода: всегда да.') + '</label><select id="ae-worktree"><option value="1">да</option><option value="0">нет</option></select></div>';
   h += '<div><label>Auto-commit ' + tip('Если агент забыл git commit — обёртка сделает сама. Только для worktree-задач.') + '</label><select id="ae-autocommit"><option value="1">да</option><option value="0">нет</option></select></div>';
   h += '<div><label>Max Steps ' + tip('Лимит итераций агента. После N шагов остановится. Простые: 5-10, сложные: 30-50. Защита от циклов.') + '</label><input type="text" id="ae-maxsteps" placeholder="20"></div>';
   h += '<div><label>Timeout (сек) ' + tip('Таймаут ожидания. По умолч. 1800 (30 мин). Быстрые задачи: 120-300, длительные: до 3600.') + '</label><input type="text" id="ae-timeout" placeholder="1800"></div>';
-  h += '</div>';
-  h += '<label>Description ' + tip('Одно предложение: что делает агент и когда применять. Видно в opencode agent list.') + '</label><input type="text" id="ae-desc">';
+  h += '</div></div>';
+
+  // --- Секция: Доступ ---
+  h += '<div class="ae-section">';
+  h += '<div class="ae-section-title">Доступ</div>';
   h += '<label>Permissions ' + tip('Какие инструменты разрешены (через запятую). Остальные = deny. Доступны: bash, read, edit, glob, grep, webfetch, websearch, task, skill, lsp.') + '</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
+  h += '</div>';
+
+  // --- Секция: MCP-серверы (заполняется динамически) ---
+  h += '<div class="ae-section">';
+  h += '<div class="ae-section-title">MCP-серверы</div>';
+  h += '<div id="mcp-checkboxes" style="color:var(--muted);font-size:12px">загрузка...</div>';
+  h += '</div>';
+
+  // --- Секция: Промпт ---
+  h += '<div class="ae-section">';
+  h += '<div class="ae-section-title">Промпт</div>';
+  h += '<label>Description ' + tip('Одно предложение: что делает агент и когда применять. Видно в opencode agent list.') + '</label><input type="text" id="ae-desc">';
   h += '<label>System Prompt ' + tip('Системный промпт — главные инструкции для агента. Чем конкретнее правила — тем лучше результат.') + '</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
-  h += '<div style="margin-top:8px;display:flex;gap:8px">';
+  h += '</div>';
+
+  // Кнопки
+  h += '<div class="ae-actions">';
   h += '<button class="primary" onclick="saveAgent()">💾 Сохранить</button>';
   h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer">📥 Export .md</button>';
   h += '<button class="danger" onclick="deleteAgent()">🗑 Удалить</button>';
@@ -880,6 +956,10 @@ async function editAgent(name) {
   $('#ae-desc').value = a.description || '';
   $('#ae-prompt').value = a.systemPrompt || '';
   $('#ae-perms').value = a.permissions ? Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(',') : 'bash,read,edit,glob,grep';
+
+  // Загружаем MCP-серверы и расставляем чекбоксы
+  loadMcpCheckboxes(a.mcp || []);
+
   $('#agent-editor').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -920,6 +1000,11 @@ async function saveAgent() {
   for (const p of ['bash','read','edit','glob','grep','webfetch','websearch','task','skill','lsp']) {
     agent.permissions[p] = perms.includes(p) ? 'allow' : 'deny';
   }
+
+  // Собираем выбранные MCP-серверы
+  const mcpChecked = getMcpChecked();
+  if (mcpChecked.length > 0) agent.mcp = mcpChecked;
+
   const r = await post('/api/agents/' + name, agent);
   if (r.ok) { toast('сохранено: ' + name); loadSettings(); return; }
 
@@ -1061,6 +1146,96 @@ function onModelSelect() {
   } else {
     customInput.style.display = 'none';
   }
+}
+
+// ===================================================================== MCP SERVERS
+
+async function loadMcpCheckboxes(selectedMcp) {
+  const container = $('#mcp-checkboxes');
+  if (!container) return;
+  try {
+    const servers = await get('/api/mcp-servers');
+    const selSet = new Set(selectedMcp || []);
+
+    if (servers.length === 0) {
+      // Если у агента есть mcp, но серверов в конфиге нет — показываем их как stale
+      if (selSet.size > 0) {
+        let h = '<div class="mcp-list">';
+        for (const name of selSet) {
+          h += '<span class="mcp-item checked mcp-stale" data-mcp="' + esc(name) + '" style="border-style:dashed;cursor:pointer" onclick="toggleStaleMcp(this)">' +
+            '<span class="mcp-checked-icon">✓</span> ' +
+            '<span class="mcp-name">' + esc(name) + '</span> ' +
+            '<span class="mcp-stale-tag">устаревший</span>' +
+            '</span>';
+        }
+        h += '</div>';
+        container.innerHTML = h;
+      } else {
+        container.innerHTML = '<span style="color:var(--muted)">нет доступных серверов</span>';
+      }
+      return;
+    }
+
+    // Набор имён серверов из ответа API
+    const apiNames = new Set(servers.map(function(s) { return s.name; }));
+
+    let h = '<div class="mcp-list">';
+    // Сначала рендерим серверы из API
+    for (const srv of servers) {
+      const checked = selSet.has(srv.name) ? ' checked' : '';
+      const disabledTag = srv.enabled ? '' : ' <span class="mcp-disabled-tag">откл.глобально</span>';
+      h += '<label class="mcp-item' + checked + '" data-mcp="' + esc(srv.name) + '">' +
+        '<input type="checkbox" value="' + esc(srv.name) + '"' + (checked ? ' checked' : '') + ' onchange="toggleMcpItem(this)">' +
+        '<span class="mcp-checked-icon">✓</span> ' +
+        '<span class="mcp-name">' + esc(srv.name) + '</span>' +
+        disabledTag +
+        '</label>';
+    }
+    // Затем показываем stale: серверы из mcp агента, которых нет в API
+    for (const name of selSet) {
+      if (!apiNames.has(name)) {
+        h += '<span class="mcp-item checked mcp-stale" data-mcp="' + esc(name) + '" style="border-style:dashed;cursor:pointer" onclick="toggleStaleMcp(this)">' +
+          '<span class="mcp-checked-icon">✓</span> ' +
+          '<span class="mcp-name">' + esc(name) + '</span> ' +
+          '<span class="mcp-stale-tag">устаревший</span>' +
+          '</span>';
+      }
+    }
+    h += '</div>';
+    container.innerHTML = h;
+  } catch(e) {
+    container.innerHTML = '<span style="color:var(--red)">ошибка загрузки серверов: ' + esc(e.message) + '</span>';
+  }
+}
+
+function toggleMcpItem(cb) {
+  const label = cb.parentNode;
+  if (cb.checked) {
+    label.classList.add('checked');
+  } else {
+    label.classList.remove('checked');
+  }
+}
+
+function toggleStaleMcp(el) {
+  el.classList.toggle('checked');
+}
+
+function getMcpChecked() {
+  const items = document.querySelectorAll('#mcp-checkboxes .mcp-item');
+  const checked = [];
+  for (const item of items) {
+    const cb = item.querySelector('input[type=checkbox]');
+    if (cb && cb.checked) {
+      checked.push(item.getAttribute('data-mcp'));
+    } else if (!cb) {
+      // Stale items (no checkbox) — treat as checked (they have the className)
+      if (item.classList.contains('checked')) {
+        checked.push(item.getAttribute('data-mcp'));
+      }
+    }
+  }
+  return checked;
 }
 
 
