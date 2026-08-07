@@ -267,6 +267,44 @@ test('toOpenCodeMd — permissions == null (не должны появиться
   assert.ok(!md.includes('permission'));
 });
 
+test('toOpenCodeMd — mcp разворачивается в tools-глобы, а не в поле mcp', () => {
+  const agent = {
+    name: 'browsing',
+    model: 'gpt-4',
+    systemPrompt: '',
+    mcp: ['agent-browser'],
+  };
+  const md = toOpenCodeMd(agent);
+  // opencode игнорирует frontmatter-поле `mcp` — изоляция только через tools
+  assert.ok(!/^mcp:/m.test(md), 'поле mcp не должно попадать во frontmatter');
+  assert.ok(md.includes('tools:'), 'должен появиться блок tools');
+  assert.ok(md.includes('"agent-browser*": true'), 'перечисленный сервер включается');
+});
+
+test('toOpenCodeMd — явный tools перекрывает выведенный из mcp', () => {
+  const agent = {
+    name: 'override',
+    model: 'gpt-4',
+    systemPrompt: '',
+    mcp: ['agent-browser'],
+    tools: { 'agent-browser*': false },
+  };
+  const md = toOpenCodeMd(agent);
+  assert.ok(md.includes('"agent-browser*": false'));
+  assert.ok(!md.includes('"agent-browser*": true'));
+});
+
+test('toOpenCodeMd — без mcp/tools блок tools не появляется', () => {
+  const agent = { name: 'plain', model: 'gpt-4', systemPrompt: '' };
+  const md = toOpenCodeMd(agent);
+  assert.ok(!md.includes('tools:'));
+});
+
+test('yamlKey — ключ-глоб экранируется кавычками', () => {
+  assert.strictEqual(yamlLine('agent-browser*', true, 0), '"agent-browser*": true');
+  assert.strictEqual(yamlLine('bash', 'allow', 0), 'bash: allow');
+});
+
 // ==================================================================== интеграционные: деплой в --target
 
 const DEPLOY_AGENT_JS = path.join(__dirname, '..', 'lib', 'deploy-agent.js');
