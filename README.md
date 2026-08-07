@@ -70,6 +70,34 @@ included in a specific project's `CLAUDE.md` with the line
 without this step, delegation still works, just without the
 NEVER/ASK/ALWAYS checklist in the default context.
 
+### Windows: local MCP commands must be wrapped in `cmd /c`
+
+`~/.config/opencode/opencode.json` (global, machine-specific, NOT in this
+git repository) — all local MCP servers installed via npm must use
+`cmd /c` as the command wrapper on Windows, otherwise `spawn()` fails with
+`ENOENT` (npm `.cmd` shims are not resolved without a shell). opencode does
+not crash immediately — it hangs without a single line of output.
+
+Correct config (one-time manual step when setting up `.ai` on a new Windows
+machine — NOT something committed to this repo):
+
+```json
+{
+  "mcp": {
+    "browser-bot": {
+      "type": "local",
+      "command": ["cmd", "/c", "browser-bot-mcp"],
+      "enabled": true
+    },
+    "agent-browser": {
+      "type": "local",
+      "command": ["cmd", "/c", "agent-browser mcp --tools core,debug,react"],
+      "enabled": true
+    }
+  }
+}
+```
+
 ## Quick Start
 
 The recommended entry point — `delegate`: one call instead of
@@ -158,6 +186,43 @@ model/worktree/tools — a command, not a table:
                                    # explicitly says when to pick a neighboring agent
 .ai/bin/agent agent create <name> # create a new agent (scaffold in agents/<name>.json)
 ```
+
+### Browser agents (two independent, do not confuse)
+
+Two agents provide browser access through different MCP servers for different
+use cases. Both are `worktree: false` — read the project, write a report,
+never touch code or git.
+
+| Agent | MCP server | Browser | Port | For |
+|---|---|---|---|---|
+| `browser` | `browser-bot` (Real Browser MCP) | User's personal Chrome (profile `chrome-bot-profile`, saved logins) | ws://9333 | Visiting sites "as yourself" — forms, comments, data behind login |
+| `testing` | `agent-browser` (vercel-labs) | Headless Chromium (self-installed, self-launched, zero relation to personal browser) | none | Dev/frontend checks: start server → open → screenshot/snapshot → close |
+
+Each now has an explicit `"mcp": [...]` field in its JSON — exactly one
+server. `deploy-agent.js` converts it to `tools:` globs that opencode
+actually understands (the `mcp` field in opencode markdown frontmatter is
+silently ignored — `lib/deploy-agent.js` reads known MCP servers from
+`~/.config/opencode/opencode.json`, generates `tools:` with allow for the
+listed server and deny for every other known server). Before this fix,
+`browser` could see all MCP servers including `agent-browser` — an
+accidental mix-up.
+
+The `agent-browser` MCP server has a cold-start hang on Windows: when the
+daemon is not yet running, the first MCP tool call spawns a child CLI
+process — on Windows this hits a handle-inheritance bug (upstream
+`vercel-labs/agent-browser#1408`, open PR at time of writing) where the
+daemon process keeps a duplicate of the MCP layer's stdout pipe open
+forever, so `read_to_end()` never sees EOF. Workaround in `lib/run-job.sh`:
+the CLI `agent-browser open about:blank` is called before starting the
+agent (wrapped in `timeout 30 ... || true`) — this warms up the session so
+the daemon is already alive when the MCP layer touches it. Cold MCP:
+infinite hang. Warm MCP: ~60ms. The same call through bare CLI works fine
+(2-4s) — no intermediate pipe reading there.
+
+Agent-browser sessions are isolated per job via
+`AGENT_BROWSER_SESSION=$(basename "$JOB_DIR")` in `run-job.sh` — without
+this, parallel tasks share one daemon and fight over it, and an orphaned
+process from a previous task hangs the next one on a dead CDP connection.
 
 General rule about `worktree` (independent of the specific name): `no` —
 agent only reads and writes a report, `--repo` can be any folder;

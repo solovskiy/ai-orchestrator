@@ -111,6 +111,48 @@ rate-limit бесплатного тира (симптом: `abandoned`/`validat
   деньги/Decimal, точное повторение сложного паттерна — тогда более
   дорогая модель), не «на всякий случай».
 
+## Writing agent system prompts — practical gotchas
+
+Discovered during the `testing` agent development but applicable to ANY
+MCP-using agent. These are NOT specific to `testing` — every new agent that
+uses an MCP server should follow them.
+
+### 1. MCP tool names double the server prefix
+
+opencode exposes MCP tools as `<server>_<tool>`. For `agent-browser`, that's
+`agent-browser_agent_browser_open` — NOT the plausible-but-wrong shortened
+form `agent-browser_navigate`. The model hallucinates credible but incorrect
+names unless the prompt lists them literally. Always list the actual tool
+names in the system prompt for any MCP server — the model's own guess will
+be wrong.
+
+Rule: if an agent uses `"mcp": ["<server>"]`, the system prompt MUST include
+the actual tool names (check the deployed agent's available tools list after
+deploy, or call a diagnostic tool first to see what's available). Never
+rely on the model to infer naming conventions.
+
+### 2. Background server launch: `&` is not enough — redirect stdout/stderr
+
+`command &` alone (without `> file 2>&1`) hangs the bash tool forever: the
+spawned server process inherits open pipes from the bash invocation and
+keeps them open indefinitely (the server never exits), so the caller blocks
+on `read()` waiting for EOF that never comes. This is the single most common
+cause of hangs in `testing` agent tasks.
+
+Always use `nohup <command> > file.log 2>&1 &` in system prompts for any
+agent that needs to start a background server. Log files go inside the
+repository, not `/tmp` (see below).
+
+### 3. All paths — relative only; sandbox rejects absolute paths silently
+
+The opencode sandbox rejects absolute paths outside the repository root with
+"user rejected permission" — this is a rejection, not a permission prompt;
+repeating it won't change the outcome. Never use `workdir` in bash calls
+(the working directory is already correct), never construct absolute paths
+to another checkout, and place temporary files (server logs, screenshots)
+inside the repository (e.g. `server.log`, `ai-research/...`), not `/tmp`
+or `C:/Users/...`.
+
 ## NEVER / ASK / ALWAYS (общее для всех проектов)
 
 **NEVER**
