@@ -643,7 +643,7 @@ cmd_learn() {
 }
 
 cmd_init() {
-  local src="$AI_HOME/.claude/skills/agent-bridge"
+  local src="$AI_HOME/skills/agent-bridge"
   local dst="${HOME}/.claude/skills/agent-bridge"
 
   [[ -d "$src" ]] || die "исходный skill не найден: $src (AI_HOME=$AI_HOME)"
