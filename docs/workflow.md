@@ -278,7 +278,8 @@ or `C:/Users/...`.
 
 Полная таблица префикс→раннер — в `README.md` (раздел «Мультимодельность»).
 Кратко: `opencode/*` и `deepseek/*` и `openai/*` и `anthropic/*` → opencode; `claude/*` →
-Claude Code CLI; `gemini/*` → Gemini CLI.
+Claude Code CLI; `claude-ds/*` → тот же Claude Code CLI, но через DeepSeek
+(нужен `DEEPSEEK_API_KEY`); `gemini/*` → Gemini CLI.
 
 Дефолт (если ни `--model`, ни `--agent` не заданы) —
 `opencode/deepseek-v4-flash-free` ($0, OpenCode Zen, без логина). Платные

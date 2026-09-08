@@ -7,5 +7,6 @@
   "gemini": "gemini",
   "google": "gemini",
   "claude": "claude",
+  "claude-ds": "claude-ds",
   "codex": "codex"
 }

@@ -187,6 +187,7 @@ git-репозиторием (иначе `start` падает на «не git-р
 | `openai/*` | opencode | **production** |
 | `anthropic/*` | opencode | **production** |
 | `claude/*` | claude | **experimental** — не тестирован, cost tracking не реализован |
+| `claude-ds/*` | claude-ds | **experimental** — Claude Code CLI, направленный через Anthropic-совместимый эндпоинт DeepSeek (`https://api.deepseek.com/anthropic`); требует `DEEPSEEK_API_KEY` в окружении. Тот же бинарник/формат вывода, что у `claude`, не тестирован на реальных задачах |
 | `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
 
@@ -196,8 +197,8 @@ git-репозиторием (иначе `start` падает на «не git-р
 
 Раннеры, кроме opencode — экспериментальные заглушки. Они корректно
 зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
-использованию**: адаптеры claude/gemini не тестированы на реальных задачах,
-а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
+использованию**: адаптеры claude/claude-ds/gemini не тестированы на реальных
+задачах, а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
 
 ## Память
 
@@ -220,7 +221,7 @@ git-репозиторием (иначе `start` падает на «не git-р
   lib/agent.js           работа с JSON, разбор потока событий, вывод таблиц
   lib/diagnosis.js       классификация провалов (outcome для heal)
   lib/models.json        маппинг префикса модели → runner
-  lib/runners/*.js       адаптеры исполнителей (opencode, claude, gemini, codex)
+  lib/runners/*.js       адаптеры исполнителей (opencode, claude, claude-ds, gemini, codex)
   lib/dashboard.js       веб-дашборд (HTTP API + сервер, localhost)
   lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
   agents/*.json          определения агентов (канонический JSON: model, variant,
