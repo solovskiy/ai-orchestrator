@@ -1,7 +1,7 @@
 {
   "name": "browser",
   "runner": "",
-  "model": "opencode-go/deepseek-v4-pro",
+  "model": "opencode/deepseek-v4-flash-free",
   "variant": null,
   "mode": "primary",
   "worktree": false,
