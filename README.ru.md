@@ -197,8 +197,8 @@ model/worktree/variant/permissions/systemPrompt из `agents/<name>.json` —
 канонического JSON-формата `.ai`.
 
 Ростер агентов не фиксирован в этом README и не хардкодится — он растёт
-(на 2026-08-06: `research`, `research-code`, `browser`, `testing`,
-`coding`, `coding-cheap`, `copywriter`), актуальный список с моделью/worktree/инструментами —
+(на 2026-09-26: `research`, `browser`, `testing`, `coding`, `copywriter`),
+актуальный список с моделью/worktree/инструментами —
 команда, не таблица:
 
 ```bash
@@ -446,7 +446,7 @@ worktree без установки зависимостей **упадёт на 
   первой ошибке, доверие `verify: passed` без диффа.
 
 **Куда research-агенты кладут отчёт** — уже зафиксировано в их
-`systemPrompt` (`agents/research.json`/`research-code.json`): всегда
+`systemPrompt` (`agents/research.json`): всегда
 `ai-research/<файл>.md` в корне целевого `--repo`, папка создаётся
 агентом сама. Указывать путь в ТЗ не нужно — это тот случай, когда
 конвенция экономит строку в каждом промпте. Если нужен отчёт вне этой
