@@ -51,20 +51,26 @@ git clone <URL-этого-репозитория> ~/tools/ai   # путь — л
 ~/tools/ai/bin/agent init
 ```
 
-`init` делает две вещи:
-1. Ставит skill `agent-bridge` в `~/.claude/skills/agent-bridge/` — Claude Code
-   подхватывает его в любом проекте на этой машине без правки CLAUDE.md.
-   Абсолютный путь к `.ai` (`~/tools/ai` из примера выше) уже встроен в
-   команды внутри установленного skill — Claude не приходится его угадывать
-   или тратить вызовы на поиск.
-2. Деплоит все `agents/*.json` в `~/.config/opencode/agents/` — иначе
+`init` делает три вещи:
+1. Ставит обёртку `~/bin/agent` (`exec bash <этот репозиторий>/bin/agent
+   "$@"`) — Git Bash видит `~/bin` по умолчанию, поэтому просто
+   `agent ...` работает из любой директории любого проекта, без
+   абсолютного пути и без копирования/линковки в каждый проект. Если
+   `~/bin` не в `PATH` — `init` печатает одну строку-подсказку.
+2. Ставит/обновляет skill `agent-bridge` в `~/.claude/skills/agent-bridge/`
+   — Claude Code подхватывает его в любом проекте на этой машине без
+   правки CLAUDE.md. Повторный запуск `init` всегда перезаписывает его
+   (например, после `git pull` в этом репозитории) — руками ничего
+   удалять не нужно.
+3. Деплоит все `agents/*.json` в `~/.config/opencode/agents/` — иначе
    `opencode` не найдёт агента по имени вне самого `.ai`.
 
 Готово — в любой другой сессии Claude Code на этой машине работает
-`.ai/bin/agent agent list` / `delegate` без дополнительной настройки.
-После правки `agents/*.json` (руками или через дашборд) шаг 2 нужно
-повторить — `agent init` (авто-редеплой при сохранении пока не сделан,
-см. `docs/ideas.md`).
+`agent agents` / `delegate` без дополнительной настройки, из любой
+директории (`--repo` по умолчанию — git-корень этой директории). После
+правки `agents/*.json` (руками или через дашборд) шаг 3 нужно повторить —
+`agent init` (авто-редеплой при сохранении пока не сделан, см.
+`docs/ideas.md`).
 
 Опционально — расширенные критерии делегирования (`docs/workflow.md`) можно
 подключить в `CLAUDE.md` конкретного проекта строкой
@@ -80,28 +86,30 @@ capability вместо имени модели. Запускать целико
 завершении.
 
 ```bash
-# --agent coding подставляет model/worktree из agents/coding.json —
-# конкретную модель не запоминай, она настраивается в дашборде/JSON
-# и может смениться; актуальная — `agent agent show coding` (см. «Capability / Agent» ниже).
+# Позиционная форма: agent delegate <агент> "<задача>" — имя агента
+# подставляет model/worktree из agents/coding.json; конкретную модель не
+# запоминай, она настраивается в дашборде/JSON и может смениться —
+# актуальная — `agent agent show coding` (см. «Capability / Agent» ниже).
 # --verify должен сам поднять окружение, иначе первый прогон в свежем
 # worktree гарантированно упадёт на "Cannot find module" по всему
 # проекту, а не только по файлам агента (см. «Перед --verify» ниже).
-.ai/bin/agent delegate \
-  --task rozetka-ui \
+agent delegate coding \
   --repo /d/work/vodovorot/server/erp_core \
-  --agent coding \
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
 
 # посмотреть все задачи
-.ai/bin/agent list
+agent list
 
 # детали одной
-.ai/bin/agent status rozetka-ui-20260726-140000
+agent status rozetka-ui-20260726-140000-4213-a1b2
 ```
 
 `delegate` уже печатает итоговый ответ агента в конце — отдельный `result`
 не нужен, но остаётся для точечного просмотра задачи, запущенной раньше.
+Для worktree-агента последняя строка — либо уведомление об авто-уборке
+(изменений не было), либо готовая команда `agent accept <jobId>` /
+`agent discard <jobId>` — см. «Ветки: accept / discard / gc» ниже.
 
 Нижний уровень (`start`+`wait`+`heal` по отдельности) никуда не делся —
 нужен, когда хочешь запустить несколько задач параллельно и не ждать
@@ -123,12 +131,11 @@ capability вместо имени модели. Запускать целико
 | `result <id>` | только итоговый ответ |
 | `kill <id>` | остановить |
 | `heal <id>` | одноразовое автовосстановление проваленной задачи (`validation_error`/`abandoned`) — отправляет структурированное сообщение в сессию (см. `diagnosis.json`, поле `outcome`); `delegate` вызывает это сам |
-| `worktree-gc` | безопасная уборка worktree-веток (только чистые + смердженные); без `--apply` — dry-run |
+| `accept <id>` | squash-мердж ветки worktree-задачи в текущую ветку репозитория, затем удаление ветки/worktree |
+| `discard <id>` | удалить ветку/worktree задачи без мерджа |
+| `agents` | алиас `agent agent list` |
+| `worktree-gc` | безопасная уборка worktree-веток (чистые + смердженные — по истории или squash) и веток `agent/*` без worktree; `--older-than N` (с `--apply`) дополнительно убирает брошенные несмерджённые ветки; без `--apply` — dry-run |
 | `clean [--days N]` | убрать задачи старше N дней (по умолч. 7) |
-| `remember <key> "<value>"` | запомнить факт в долговременную память |
-| `recall [<pattern>]` | найти факты по ключу/тегу/значению |
-| `forget <key>` | удалить факт |
-| `learn <jobId>` | извлечь знание из результата завершённой задачи |
 
 Флаги `delegate`: `--timeout <сек>` (по умолч. 1800), `--no-heal` (не пытаться
 восстановить при провале).
@@ -140,13 +147,54 @@ capability вместо имени модели. Запускать целико
 Также см. `agent dashboard` — локальный веб-интерфейс для просмотра задач,
 статистики и настройки агентов (открывается в браузере на localhost:9191).
 
-Полный список опций — `agent --help`.
+Полный список команд/опций — `agent help --all` (короткая `agent --help`
+показывает только повседневный набор: `delegate`, `list`, `status`,
+`result`, `accept`, `discard`, `agents`).
+
+## Ветки: accept / discard / gc
+
+Worktree-задача (любой агент с `worktree: true`, например `coding`)
+коммитит в свою ветку/worktree (`agent/<task>-<id>`, уникальный на
+задачу — коллизий slug больше нет). `delegate` сам закрывает цикл в
+конце:
+
+- **Нет коммитов и worktree чист** — сам удаляет ветку/worktree и
+  печатает одну строку (`изменений нет — worktree и ветка удалены`).
+  Делать ничего не нужно.
+- **Иначе** — печатает готовую подсказку:
+  `ветка agent/foo-a1b2: 2 коммит(ов), 3 файл(ов), verify: passed → agent accept <jobId>  |  agent discard <jobId>`.
+
+```bash
+agent accept <jobId>    # git merge --squash <ветка> в текущую ветку репозитория,
+                         # один коммит из task/result.md, затем удаление
+                         # ветки/worktree. Откажет (ничего не тронув), если:
+                         # в worktree или основном репозитории есть
+                         # незакоммиченные изменения, текущая ветка != та,
+                         # от которой ответвлялись, или squash-мердж конфликтует.
+agent discard <jobId>   # просто удаляет ветку/worktree, без мерджа.
+```
+
+`accept`/`discard` работают с любой задачей в цепочке `send`/`heal` — они
+идут по `continuesJob` вверх, чтобы найти ветку, так что принятие
+восстановленной/продолженной задачи всё равно резолвится к той же
+worktree-ветке.
+
+`agent worktree-gc --repo <path> [--apply] [--older-than N]` — плановая
+уборка (тем же вызовом её делает `cron-daily`): отчёт/удаление веток,
+которые чисты **и** смерджены — либо по истории (ancestor), либо потому
+что `accept` уже сделал squash-мердж (определяется через `git merge-tree
+--write-tree`, поэтому то, что история ветки не буквальный предок,
+неважно). `--older-than N` (только с `--apply`) дополнительно убирает
+брошенные несмерджённые ветки `agent/*`, последний коммит которых старше
+N дней — для задач, которые никто не принял и не отбросил. По умолчанию
+dry-run.
 
 ## Capability / Agent
 
-`--agent <name>` (или `--capability` для обратной совместимости) у `start`
-и `delegate` подставляет model/worktree/variant/permissions/systemPrompt
-из `agents/<name>.json` — канонического JSON-формата `.ai`.
+Имя агента (позиционно или `--agent <name>`; `--capability` — оставленный
+алиас) у `start` и `delegate` подставляет
+model/worktree/variant/permissions/systemPrompt из `agents/<name>.json` —
+канонического JSON-формата `.ai`.
 
 Ростер агентов не фиксирован в этом README и не хардкодится — он растёт
 (на 2026-08-05: `research`, `research-code`, `coding`, `coding-cheap`,
@@ -154,17 +202,17 @@ capability вместо имени модели. Запускать целико
 таблица:
 
 ```bash
-.ai/bin/agent agent list          # имя, модель, worktree да/нет, инструменты
-.ai/bin/agent agent show <name>   # полный JSON, включая description —
-                                   # там явно написано, когда взять соседний агент
-.ai/bin/agent agent create <name> # завести нового агента (заготовка в agents/<name>.json)
+agent agents                # имя, модель, worktree да/нет, инструменты (= agent agent list)
+agent agent show <name>     # полный JSON, включая description —
+                             # там явно написано, когда взять соседний агент
+agent agent create <name>   # завести нового агента (заготовка в agents/<name>.json)
 ```
 
 Общее правило по `worktree` (не зависит от конкретного имени): `нет` —
 агент только читает и пишет отчёт, `--repo` может быть любой папкой;
 `да` — агент коммитит в свою ветку, `--repo` обязан быть
-git-репозиторием (иначе `start` падает на «не git-репозиторий: `<path>`»
-ещё до запуска модели).
+git-репозиторием (иначе `delegate`/`start` откажет на «не
+git-репозиторий: `<path>`» ещё до запуска модели).
 
 `agent init` генерирует из JSON opencode-совместимые `.md` файлы в
 `~/.config/opencode/agents/` для всех `agents/*.json` — после этого
@@ -190,26 +238,17 @@ git-репозиторием (иначе `start` падает на «не git-р
 | `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
 
-Дефолт, если ни `--model`, ни `--agent` не заданы —
+Дефолт, если ни модель агента, ни `--model` не заданы —
 `opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, без логина). Можно
 задать и раннер явно: `--runner opencode --model claude/sonnet-4`.
+`--model`/`--runner`/`--variant` — недокументированные алиасы (не
+показаны в `agent --help`/`help --all`) — обычный путь это выбрать
+агента, а не модель.
 
 Раннеры, кроме opencode — экспериментальные заглушки. Они корректно
 зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
 использованию**: адаптеры claude/gemini не тестированы на реальных задачах,
 а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
-
-## Память
-
-Факты живут в `.ai/memory/index.json`. Доступны между любыми сессиями:
-
-```bash
-.ai/bin/agent remember "project:db-name" "v96800_vodovorot" --tags "opencart,mysql"
-.ai/bin/agent recall "db"              # поиск
-.ai/bin/agent learn <jobId>            # извлечь из результата задачи
-.ai/bin/agent forget "project:db-name" # удалить
-.ai/bin/agent recall                   # показать всё
-```
 
 ## Как устроено
 
@@ -232,9 +271,9 @@ git-репозиторием (иначе `start` падает на «не git-р
   scripts/               разовые обслуживающие скрипты
   backups/               резервные копии
   test/                  юнит-/интеграционные тесты (agent-crud, dashboard-api,
-                          deploy-agent, diagnosis, diffStatusLines, pad)
+                          deploy-agent, diagnosis, diffStatusLines, pad,
+                          worktree-lifecycle)
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
-  memory/index.json      долговременная память (remember/recall)
 ```
 
 Отчёты research-агентов сюда не попадают — они сохраняются в
@@ -324,13 +363,15 @@ worktree без установки зависимостей **упадёт на 
   - `research-delegation-reminder.js` — считает вызовы WebFetch/WebSearch
     подряд; на 3-м напоминает делегировать многоисточниковое исследование
   - `prefer-ai-agent-over-subagent.js` — перехватывает вызов встроенного
-    субагента Claude Code и предлагает использовать `.ai/bin/agent`
+    субагента Claude Code и предлагает использовать `agent`
     (дешевле, изолированный контекст)
 - **`test/`** — юнит-/интеграционные тесты на чистой Node (без внешних
   зависимостей, `node test/<файл>.test.js`):
   - `diagnosis.test.js` — классификация исходов задачи
   - `diff-status-lines.test.js` — фильтрация изменений git diff с pre-status снимком
   - `pad.test.js` — форматирование таблиц в CLI-выводе
+  - `worktree-lifecycle.test.js` — `accept`/`discard`/`worktree-finish`/
+    squash-detect в `worktree-gc`, во временных git-репозиториях
   - `deploy-agent.test.js` — JSON→YAML/markdown конвертация + freshness-check
     (не перезаписывать `.md`, если он новее исходного `.json`)
   - `agent-crud.test.js` — CLI create/list/show/delete для `agents/*.json`

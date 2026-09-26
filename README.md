@@ -49,20 +49,25 @@ git clone <this-repo-url> ~/tools/ai   # any path, doesn't have to be inside a p
 ~/tools/ai/bin/agent init
 ```
 
-`init` does two things:
-1. Installs the `agent-bridge` skill into `~/.claude/skills/agent-bridge/` —
-   Claude Code picks it up in any project on this machine without editing
-   CLAUDE.md. The absolute path to `.ai` (`~/tools/ai` from the example above)
-   is already baked into the commands inside the installed skill — Claude
-   doesn't have to guess it or spend calls searching for it.
-2. Deploys all `agents/*.json` into `~/.config/opencode/agents/` — otherwise
+`init` does three things:
+1. Installs a wrapper at `~/bin/agent` (`exec bash <this repo>/bin/agent "$@"`)
+   — Git Bash sees `~/bin` by default, so plain `agent ...` works from any
+   directory of any project, no absolute path or copying/linking into each
+   project needed. If `~/bin` isn't on `PATH`, `init` prints one hint line.
+2. Installs/updates the `agent-bridge` skill into
+   `~/.claude/skills/agent-bridge/` — Claude Code picks it up in any project
+   on this machine without editing CLAUDE.md. Re-running `init` always
+   overwrites it (e.g. after `git pull` in this repo) — nothing to remove
+   by hand first.
+3. Deploys all `agents/*.json` into `~/.config/opencode/agents/` — otherwise
    `opencode` won't find an agent by name outside of `.ai` itself.
 
 Done — in any other Claude Code session on this machine,
-`.ai/bin/agent agent list` / `delegate` works with no additional setup.
-After editing `agents/*.json` (manually or via the dashboard), step 2 must
-be repeated — `agent init` (auto-redeploy on save is not yet implemented,
-see `docs/ideas.md`).
+`agent agents` / `agent delegate` works with no additional setup, from any
+directory (`--repo` defaults to that directory's git root). After editing
+`agents/*.json` (manually or via the dashboard), step 3 must be
+repeated — `agent init` (auto-redeploy on save is not yet implemented, see
+`docs/ideas.md`).
 
 Optionally — the extended delegation criteria (`docs/workflow.md`) can be
 included in a specific project's `CLAUDE.md` with the line
@@ -106,29 +111,30 @@ background Bash (`run_in_background: true`) — the harness itself will send a
 completion notification.
 
 ```bash
-# --agent coding substitutes model/worktree from agents/coding.json —
-# don't memorize the concrete model; it's configured in the dashboard/JSON
-# and can change; the current one — `agent agent show coding` (see "Capability / Agent" below).
+# Positional form: agent delegate <agent> "<prompt>" — the agent name
+# substitutes model/worktree from agents/coding.json; don't memorize the
+# concrete model, it's configured in the dashboard/JSON and can change —
+# the current one is `agent agent show coding` (see "Capability / Agent" below).
 # --verify should set up the environment itself, otherwise the first run in a fresh
 # worktree is guaranteed to fail on "Cannot find module" across the whole
 # project, not just the agent's files (see "Before --verify" below).
-.ai/bin/agent delegate \
-  --task rozetka-ui \
+agent delegate coding \
   --repo /d/work/vodovorot/server/erp_core \
-  --agent coding \
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
 
 # view all tasks
-.ai/bin/agent list
+agent list
 
 # details of one
-.ai/bin/agent status rozetka-ui-20260726-140000
+agent status rozetka-ui-20260726-140000-4213-a1b2
 ```
 
 `delegate` already prints the agent's final answer at the end — a separate
 `result` is not needed, but remains available for spot-checking a task launched
-earlier.
+earlier. For a worktree agent, the very last line is either an auto-cleanup
+notice (nothing changed) or a ready-made `agent accept <jobId>` /
+`agent discard <jobId>` command — see "Branches: accept / discard / gc" below.
 
 The lower level (`start`+`wait`+`heal` individually) hasn't gone anywhere —
 needed when you want to launch multiple tasks in parallel without waiting for
@@ -150,12 +156,11 @@ each one to finish in a single call.
 | `result <id>` | final answer only |
 | `kill <id>` | stop |
 | `heal <id>` | one-shot auto-recovery of a failed task (`validation_error`/`abandoned`) — sends a structured message into the session (see `diagnosis.json`, `outcome` field); `delegate` calls this automatically |
-| `worktree-gc` | safe cleanup of worktree branches (only clean + merged); without `--apply` — dry-run |
+| `accept <id>` | squash-merge a worktree task's branch into the repo's current branch, then remove the branch/worktree |
+| `discard <id>` | drop a worktree task's branch/worktree without merging |
+| `agents` | alias for `agent agent list` |
+| `worktree-gc` | safe cleanup of worktree branches (clean + merged — ancestor or squash) and `agent/*` branches without a worktree; `--older-than N` (with `--apply`) also drops abandoned unmerged branches; without `--apply` — dry-run |
 | `clean [--days N]` | remove tasks older than N days (default 7) |
-| `remember <key> "<value>"` | store a fact in long-term memory |
-| `recall [<pattern>]` | find facts by key/tag/value |
-| `forget <key>` | delete a fact |
-| `learn <jobId>` | extract knowledge from a completed task's result |
 
 `delegate` flags: `--timeout <sec>` (default 1800), `--no-heal` (don't attempt
 recovery on failure).
@@ -167,13 +172,51 @@ above the limit.
 Also see `agent dashboard` — a local web UI for viewing tasks, statistics,
 and configuring agents (opens in a browser at localhost:9191).
 
-Full option list — `agent --help`.
+Full command/option list — `agent help --all` (the short `agent --help`
+shows only the everyday subset: `delegate`, `list`, `status`, `result`,
+`accept`, `discard`, `agents`).
+
+## Branches: accept / discard / gc
+
+A worktree task (any agent with `worktree: true`, e.g. `coding`) commits
+into its own branch/worktree (`agent/<task>-<id>`, unique per task — no
+slug collisions). `delegate` closes the loop automatically at the end:
+
+- **No commits and a clean worktree** — it removes the branch/worktree
+  itself and prints one line (`изменений нет — worktree и ветка удалены`).
+  Nothing for you to do.
+- **Otherwise** — it prints a ready-made hint:
+  `ветка agent/foo-a1b2: 2 коммит(ов), 3 файл(ов), verify: passed → agent accept <jobId>  |  agent discard <jobId>`.
+
+```bash
+agent accept <jobId>    # git merge --squash <branch> into the repo's current
+                         # branch, one commit from task/result.md, then removes
+                         # the branch/worktree. Refuses (and touches nothing) if:
+                         # the worktree or main repo has uncommitted changes,
+                         # the current branch != the branch this task forked
+                         # from, or the squash-merge conflicts.
+agent discard <jobId>   # just removes the branch/worktree, no merge.
+```
+
+`accept`/`discard` work on any job in a `send`/`heal` chain — they follow
+`continuesJob` up to find the branch, so accepting a healed/continued task
+still resolves to the same worktree branch.
+
+`agent worktree-gc --repo <path> [--apply] [--older-than N]` is the
+periodic sweep (also run by `cron-daily`): reports/removes branches that
+are clean **and** merged — either by history (ancestor) or because an
+`accept` already squash-merged them (detected via `git merge-tree
+--write-tree`, so the branch's history not being a literal ancestor
+doesn't matter). `--older-than N` (only with `--apply`) additionally drops
+abandoned, unmerged `agent/*` branches whose last commit is older than N
+days — for tasks nobody ever ran `accept`/`discard` on. Dry-run by default.
 
 ## Capability / Agent
 
-`--agent <name>` (or `--capability` for backward compatibility) on `start`
-and `delegate` substitutes model/worktree/variant/permissions/systemPrompt
-from `agents/<name>.json` — `.ai`'s canonical JSON format.
+An agent name (positional or `--agent <name>`; `--capability` is a kept
+alias) on `start` and `delegate` substitutes
+model/worktree/variant/permissions/systemPrompt from `agents/<name>.json`
+— `.ai`'s canonical JSON format.
 
 The agent roster is not fixed in this README and is not hardcoded — it grows
 (as of 2026-08-06: `research`, `research-code`, `browser`, `testing`,
@@ -181,10 +224,10 @@ The agent roster is not fixed in this README and is not hardcoded — it grows
 model/worktree/tools — a command, not a table:
 
 ```bash
-.ai/bin/agent agent list          # name, model, worktree yes/no, tools
-.ai/bin/agent agent show <name>   # full JSON, including description —
-                                   # explicitly says when to pick a neighboring agent
-.ai/bin/agent agent create <name> # create a new agent (scaffold in agents/<name>.json)
+agent agents                # name, model, worktree yes/no, tools (= agent agent list)
+agent agent show <name>     # full JSON, including description —
+                             # explicitly says when to pick a neighboring agent
+agent agent create <name>   # create a new agent (scaffold in agents/<name>.json)
 ```
 
 ### Browser agents (two independent, do not confuse)
@@ -227,8 +270,8 @@ process from a previous task hangs the next one on a dead CDP connection.
 General rule about `worktree` (independent of the specific name): `no` —
 agent only reads and writes a report, `--repo` can be any folder;
 `yes` — agent commits to its own branch, `--repo` must be a
-git repository (otherwise `start` fails with "not a git repository: `<path>`"
-before the model even launches).
+git repository (otherwise `delegate`/`start` refuses with "не
+git-репозиторий: `<path>`" before the model even launches).
 
 `agent init` generates opencode-compatible `.md` files in
 `~/.config/opencode/agents/` for all `agents/*.json` — after that,
@@ -254,26 +297,16 @@ automatically via `--model`:
 | `gemini/*` | gemini | **experimental** — untested, CLI flags not verified |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex does not emit JSON) |
 
-Default when neither `--model` nor `--agent` is specified —
+Default when neither `--model` nor an agent is specified —
 `opencode/deepseek-v4-flash-free` (OpenCode Zen, $0, no login). You can also
 set the runner explicitly: `--runner opencode --model claude/sonnet-4`.
+`--model`/`--runner`/`--variant` are undocumented aliases (not shown in
+`agent --help`/`help --all`) — normal use is to pick an agent, not a model.
 
 Runners other than opencode are experimental stubs. They are correctly
 registered in `lib/models.json` and `lib/runners/`, but **not ready for
 use**: the claude/gemini adapters are untested on real tasks,
 and codex cannot read the output (Codex CLI does not emit a JSON stream).
-
-## Memory
-
-Facts live in `.ai/memory/index.json`. Available across any sessions:
-
-```bash
-.ai/bin/agent remember "project:db-name" "v96800_vodovorot" --tags "opencart,mysql"
-.ai/bin/agent recall "db"              # search
-.ai/bin/agent learn <jobId>            # extract from a task result
-.ai/bin/agent forget "project:db-name" # delete
-.ai/bin/agent recall                   # show all
-```
 
 ## Architecture
 
@@ -296,9 +329,9 @@ Facts live in `.ai/memory/index.json`. Available across any sessions:
   scripts/               one-off maintenance scripts
   backups/               backups
   test/                  unit/integration tests (agent-crud, dashboard-api,
-                          deploy-agent, diagnosis, diffStatusLines, pad)
+                          deploy-agent, diagnosis, diffStatusLines, pad,
+                          worktree-lifecycle)
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
-  memory/index.json      long-term memory (remember/recall)
 ```
 
 Research agent reports do not land here — they are saved in
@@ -389,13 +422,15 @@ same session for retry. `agent status` shows the outcome in the diagnosis line.
     WebFetch/WebSearch calls; on the 3rd one, reminds to delegate
     multi-source research
   - `prefer-ai-agent-over-subagent.js` — intercepts Claude Code's
-    built-in subagent call and suggests using `.ai/bin/agent`
+    built-in subagent call and suggests using `agent`
     (cheaper, isolated context)
 - **`test/`** — unit/integration tests on bare Node (no external
   dependencies, `node test/<file>.test.js`):
   - `diagnosis.test.js` — task outcome classification
   - `diff-status-lines.test.js` — git diff change filtering with pre-status snapshot
   - `pad.test.js` — table formatting in CLI output
+  - `worktree-lifecycle.test.js` — `accept`/`discard`/`worktree-finish`/
+    `worktree-gc` squash-merge detection, in real temp git repos
   - `deploy-agent.test.js` — JSON→YAML/markdown conversion + freshness-check
     (don't overwrite `.md` if it's newer than the source `.json`)
   - `agent-crud.test.js` — CLI create/list/show/delete for `agents/*.json`
