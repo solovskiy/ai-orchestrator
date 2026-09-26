@@ -26,79 +26,94 @@ AGENT_JS="$LIB/agent.js"
 AGENT_JS_WIN="$(winpath "$AGENT_JS")"
 JOBS_DIR_WIN="$(winpath "$JOBS_DIR")"
 
-usage() {
-  cat <<'EOF'
-agent — оркестрация CLI-агентов как фоновых задач
+# Имена агентов из agents/*.json — для подсказок в ошибках и для help.
+# ("${names[*]}" с IFS из двух символов взял бы только первый — джойним руками.)
+agent_roster() {
+  local f names=()
+  for f in "$AI_HOME/agents"/*.json; do
+    [[ -f "$f" ]] || continue
+    names+=("$(basename "$f" .json)")
+  done
+  local out="" n
+  for n in "${names[@]}"; do
+    out="${out:+$out, }$n"
+  done
+  echo "$out"
+}
 
-  agent delegate --task <slug> --repo <path> [опции]  ОДИН вызов: start+wait+heal+result
-                                                       (запускать через Bash run_in_background)
-  agent start   --task <slug> --repo <path> [опции]   запустить задачу (фон)
-  agent chat    --task <slug> --repo <path> [опции]   интерактивный чат (foreground)
-  agent list                                          все задачи
-  agent status  <jobId>                               детали задачи
+# Короткая справка (видимый интерфейс) — полная версия в usage_all().
+usage() {
+  cat <<EOF
+agent — делегирование задач фоновым CLI-агентам
+
+  agent delegate <агент> "<задача>" [--verify "<cmd>"]   ОДИН вызов: start+wait+heal+result
+                                                          (запускать через Bash run_in_background)
+  agent list                                             все задачи
+  agent status  <jobId>                                  детали задачи
+  agent result  <jobId>                                  только итоговый ответ агента
+  agent accept  <jobId>                                  принять worktree-задачу (squash-мердж в текущую ветку)
+  agent discard <jobId>                                  отбросить worktree-задачу (удалить ветку/worktree)
+  agent agents                                           список агентов (имя/модель/worktree/инструменты)
+
+Примеры:
+  agent delegate research "изучи X, сохрани отчёт в X.md"
+  agent delegate coding "реализуй Y по образцу Z" --verify "npm test"
+  agent list
+  agent status rozetka-ui-20260726-140000-42-ab12
+  agent accept rozetka-ui-20260726-140000-42-ab12
+
+Текущий ростер агентов: $(agent_roster)
+agent help --all — все команды (start/wait/send/heal/tail/kill/clean/worktree-gc/...)
+EOF
+}
+
+# Полный список — команды из "внутренней кухни" (низкий уровень, обслуживание),
+# которые не нужны для повседневного делегирования, но остаются доступны.
+usage_all() {
+  usage
+  cat <<'EOF'
+
+Полный список команд:
+  agent start   <агент> "<задача>" [опции]            запустить задачу (фон, без ожидания)
+  agent chat    --task <slug> --repo <path> --model <prov/model>  интерактивный чат (foreground)
   agent tail    <jobId> [n]                           последние n блоков вывода (по умолч. 20)
   agent wait    <jobId> [<jobId>...] [--timeout N]    ждать завершения (запускать в фоне — тогда придёт уведомление)
-  agent result  <jobId>                               только итоговый ответ агента
   agent send    <jobId> "<текст>"                     продолжить сессию новой задачей
   agent kill    <jobId>                               остановить задачу
   agent heal    <jobId>                               восстановить проваленную задачу (validation_error/abandoned)
   agent clean   [--days N]                            удалить задачи старше N дней (по умолч. 7)
-  agent worktree-gc --repo <path> [--apply]           отчёт/уборка worktree (безопасно: только чистые+смерджённые)
-  agent remember <key> "<value>" [--tags a,b] [--source <id>]   запомнить факт
-  agent recall [<pattern>]                              найти факты (по умолч. всё)
-  agent forget <key>                                    забыть факт
-  agent learn <jobId>                                   извлечь знание из результата задачи
-  agent stats [--days N] [--json]                      агрегация стоимости и токенов по всем задачам
-  agent init                                           глобальная установка skill (копирует SKILL.md
-                                                       в ~/.claude/skills/agent-bridge/ — после этого
-                                                       ЛЮБОЙ проект может вызывать делегирование)
-  agent dashboard [--port N] [--open]                  локальный веб-дашборд (localhost:9191)
-  agent cron-daily                                      ежедневная очистка (worktree-gc + clean)
-  agent agent list                                      список агентов (agents/*.json)
-  agent agent show <name>                               показать полный JSON агента
-  agent agent create <name>                             создать нового агента из шаблона
-  agent agent delete <name>                             удалить агента
+  agent worktree-gc --repo <path> [--apply] [--older-than N]  отчёт/уборка worktree и веток agent/*
+  agent stats [--days N] [--json]                     агрегация стоимости и токенов по всем задачам
+  agent init                                          установить agent в PATH (~/bin/agent) и обновить skill
+  agent dashboard [--port N] [--open]                 локальный веб-дашборд (localhost:9191)
+  agent cron-daily                                    ежедневная очистка (worktree-gc + clean)
+  agent agent list                                    список агентов (agents/*.json)
+  agent agent show <name>                             показать полный JSON агента
+  agent agent create <name>                           создать нового агента из шаблона
+  agent agent delete <name>                           удалить агента
 
-Опции start:
-  --task <slug>          имя задачи (обязательно), участвует в jobId
-  --repo <path>          репозиторий, в котором работает агент (обязательно)
-  --prompt-file <path>   ТЗ из файла
-  --prompt <text>        ТЗ строкой
-                         (если ни того ни другого — читается со stdin)
-  --capability <name>    research | coding (синоним --agent) — подставляет
-                         model/worktree из agents/<name>.json
-  --worktree             создать git worktree под задачу и работать в нём
-  --variant <level>      уровень усилия: minimal, low, medium, high, max
-                         (по умолчанию из agents/<name>.json; переопределяет)
-  --branch <name>        имя ветки для worktree (по умолч. agent/<slug>)
-  --base <ref>           от чего ответвлять worktree (по умолч. текущий HEAD)
-  --model <prov/model>   модель, напр. deepseek/deepseek-v4-pro
-                         (если не указан --runner, определяется автоматом:
-                         deepseek/* → opencode, claude/* → claude, gemini/* → gemini;
-                         переопределяет модель из --capability)
-  --runner <name>        исполнитель (по умолч. opencode; не нужен, если --model)
-  --verify "<cmd>"       команда проверки после агента, напр. "npm run typecheck && npm test"
+Опции start/delegate (позиционно: agent delegate <агент> "<задача>", или флагами):
+  --agent <name>          имя агента из agents/*.json (или первый позиционный аргумент)
+  --task <slug>           имя задачи (по умолч. — имя агента, участвует в jobId)
+  --repo <path>           репозиторий (по умолч. — git-корень текущей директории)
+  --prompt-file <path>    ТЗ из файла
+  --prompt <text>         ТЗ строкой (или второй позиционный аргумент; иначе — stdin)
+  --worktree              создать git worktree под задачу и работать в нём
+                          (--agent уже включает это сам, если у агента worktree: true)
+  --branch <name>         имя ветки для worktree (по умолч. agent/<slug>-<id>)
+  --base <ref>            от чего ответвлять worktree (по умолч. текущий HEAD)
+  --verify "<cmd>"        команда проверки после агента, напр. "npm run typecheck && npm test"
 
-Опции delegate:
-  (все опции start) + --timeout <сек>   таймаут ожидания (по умолч. 1800)
-                      --no-heal          не чинить провал автоматически
-                                         (ни по outcome, ни по verify)
-                      --max-verify-retries <N>  сколько раз продолжать сессию
-                                         при красном --verify (по умолч. 2)
+Опции delegate дополнительно:
+  --timeout <сек>            таймаут ожидания (по умолч. 1800)
+  --no-heal                  не чинить провал автоматически (ни по outcome, ни по verify)
+  --max-verify-retries <N>   сколько раз продолжать сессию при красном --verify (по умолч. 2)
 
-Опции chat:
-  --task <slug>          имя задачи (обязательно)
-  --repo <path>          репозиторий (обязательно)
-  --model <prov/model>   модель (обязательно)
-  --prompt <text>        начальное сообщение (необязательно)
-  --runner <name>        исполнитель (по умолч. opencode)
-
-Примеры:
-  agent start --task rozetka-ui --repo /d/work/vodovorot/server/erp_core \
-    --worktree --verify "npm run typecheck && npm test" --prompt-file tz.md
-  agent chat --task debug-login --repo . --model deepseek/deepseek-v4-chat
-  agent list
-  agent result rozetka-ui-20260726-140000
+Недокументированные алиасы (работают, но не нужны в обычной работе):
+  --capability <name>     то же самое, что --agent
+  --model <prov/model>    переопределить модель агента (провайдер должен совпадать)
+  --runner <name>         исполнитель (по умолч. определяется по --model)
+  --variant <level>       переопределить уровень усилия агента (minimal..max)
 EOF
 }
 
@@ -133,10 +148,30 @@ job_dir_of() {
   echo "$d"
 }
 
+# Идемпотентно дописывает в info/exclude основного git-репозитория пути,
+# которые .ai сам генерирует рядом с рабочим деревом (worktree-директории,
+# деплой агентов/плагинов/конфига opencode внутрь worktree) — иначе
+# `git status` в целевом репозитории видит их как untracked-мусор.
+# git-common-dir резолвится явно: у самого репозитория он относительный
+# (".git"), а внутри worktree — абсолютный путь наружу; на всякий случай
+# приводим сами, если git всё же вернул относительный.
+ensure_git_exclude() {
+  local repo="$1" common_dir exclude_file line
+  common_dir="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [[ "$common_dir" = /* ]] || common_dir="$repo/$common_dir"
+  exclude_file="$common_dir/info/exclude"
+  mkdir -p "$(dirname "$exclude_file")" 2>/dev/null || return 0
+  touch "$exclude_file" 2>/dev/null || return 0
+  for line in ".claude/worktrees/" ".opencode/agents/" ".opencode/plugins/" ".opencode/opencode.json"; do
+    grep -qxF "$line" "$exclude_file" 2>/dev/null || echo "$line" >> "$exclude_file"
+  done
+}
+
 cmd_start() {
-  local task="" repo="" prompt_file="" prompt_text="" model="" verify=""
+  local task="" repo="" prompt_file="" prompt_text="" model="" model_explicit=0 verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
   local max_parallel="" force=0 capability="" variant=""
+  local positional=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -146,7 +181,7 @@ cmd_start() {
       --prompt)      prompt_text="${2:-}"; shift 2 ;;
       --capability)  capability="${2:-}"; shift 2 ;;
       --agent)       capability="${2:-}"; shift 2 ;;  # новое имя, capability — обратная совместимость
-      --model)       model="${2:-}"; shift 2 ;;
+      --model)       model="${2:-}"; model_explicit=1; shift 2 ;;
       --verify)      verify="${2:-}"; shift 2 ;;
       --runner)      runner="${2:-}"; runner_explicit=1; shift 2 ;;
       --branch)      branch="${2:-}"; shift 2 ;;
@@ -156,9 +191,26 @@ cmd_start() {
       --max-parallel) max_parallel="${2:-}"; shift 2 ;;
       --force)        force=1; shift ;;
       -h|--help)     usage; return 0 ;;
-      *)             die "неизвестная опция: $1" ;;
+      --*)           die "неизвестная опция: $1" ;;
+      *)             positional+=("$1"); shift ;;
     esac
   done
+
+  # Позиционная форма: agent delegate <агент> "<задача>" — первый
+  # позиционный аргумент = агент (если --agent/--capability не задан),
+  # второй = ТЗ (если ни --prompt, ни --prompt-file не задан).
+  if [[ -z "$capability" && ${#positional[@]} -gt 0 ]]; then
+    capability="${positional[0]}"
+    positional=("${positional[@]:1}")
+  fi
+  if [[ -z "$prompt_file" && -z "$prompt_text" && ${#positional[@]} -gt 0 ]]; then
+    prompt_text="${positional[0]}"
+    positional=("${positional[@]:1}")
+  fi
+  (( ${#positional[@]} == 0 )) || die "лишние аргументы: ${positional[*]}"
+
+  [[ -n "$capability" || $model_explicit -eq 1 ]] \
+    || die "укажи агента: agent delegate <агент> \"<задача>\" (агенты: $(agent_roster))"
 
   # --agent/--capability <name>: читает конфиг агента из дашборда
   # (AI_DASHBOARD_URL), при недоступности — локальный файл
@@ -171,7 +223,15 @@ cmd_start() {
     if read_output="$(agent_js agent-read "$capability" 2>/dev/null)"; then
       { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; } <<< "$read_output"
     else
-      die "неизвестный агент/capability: $capability (нет в дашборде (${AI_DASHBOARD_URL:-http://localhost:9191}), нет agents/$capability.json)"
+      die "неизвестный агент: $capability (агенты: $(agent_roster))"
+    fi
+
+    # --model вместе с --agent должен быть той же модели (тот же провайдер) —
+    # иначе модель тихо расходится с тем, что настроено в agents/<name>.json,
+    # и никто этого не заметит до самого запуска. Другой провайдер — почти
+    # всегда ошибка (модель домыслена, а не осознанно переопределена).
+    if [[ $model_explicit -eq 1 && -n "$cap_model" && "${model%%/*}" != "${cap_model%%/*}" ]]; then
+      die "модель задаётся в agents/$capability.json (сейчас $cap_model) — убери --model"
     fi
 
     [[ -n "$model" ]] || model="$cap_model"
@@ -186,13 +246,17 @@ cmd_start() {
     fi
   fi
 
-  # Дефолтная модель, если ни --model, ни --capability не заданы:
-  # бесплатная OpenCode Zen. Переопределить — --model.
+  # Дефолтная модель, если ни --model, ни --agent не подставили её (агент
+  # без model в JSON — редкий случай) — бесплатная OpenCode Zen.
   model="${model:-opencode/deepseek-v4-flash-free}"
 
-  [[ -n "$task" ]] || die "--task обязателен"
-  [[ -n "$repo" ]] || die "--repo обязателен"
+  # --repo по умолчанию — git-корень текущей директории, иначе сам $PWD.
+  if [[ -z "$repo" ]]; then
+    repo="$(git rev-parse --show-toplevel 2>/dev/null)" || repo="$PWD"
+  fi
   [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
+
+  task="${task:-${capability:-task}}"
   [[ "$task" =~ ^[A-Za-z0-9._-]+$ ]] || die "--task: допустимы буквы, цифры, . _ -"
 
   # --- ТЗ: файл > строка > stdin ---
@@ -225,13 +289,30 @@ cmd_start() {
   printf '%s\n' "$prompt" > "$job_dir/prompt.md"
 
   # --- рабочая директория: worktree или сам репозиторий ---
-  local cwd="$repo"
+  local cwd="$repo" base_branch="" base_commit=""
   if (( make_worktree )); then
     git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 \
-      || die "не git-репозиторий: $repo"
-    branch="${branch:-agent/$task}"
-    local wt="$repo/.claude/worktrees/$task"
-    [[ -e "$wt" ]] && die "worktree уже существует: $wt"
+      || die "не git-репозиторий: $repo — агент ${capability:-агент} работает в своей ветке; для чтения/отчёта возьми research-агента или сделай git init"
+
+    base_branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
+    base_commit="$(git -C "$repo" rev-parse "${base:-HEAD}" 2>/dev/null)"
+
+    # Короткий id вместо привязки имени ветки/worktree к одному task —
+    # повторный delegate с тем же --task больше не коллидирует и не
+    # плодит слаги-подстановки задом наперёд.
+    local shortid wt attempt=0
+    if [[ -z "$branch" ]]; then
+      while :; do
+        shortid="$(printf '%04x' $RANDOM)"
+        branch="agent/${task}-${shortid}"
+        wt="$repo/.claude/worktrees/${task}-${shortid}"
+        [[ ! -e "$wt" ]] && ! git -C "$repo" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null && break
+        (( ++attempt >= 5 )) && die "не удалось подобрать свободное имя ветки/worktree для $task"
+      done
+    else
+      wt="$repo/.claude/worktrees/${task}-$(printf '%04x' $RANDOM)"
+    fi
+
     if [[ -n "$base" ]]; then
       git -C "$repo" worktree add "$wt" -b "$branch" "$base" >/dev/null \
         || die "git worktree add не удался"
@@ -240,6 +321,7 @@ cmd_start() {
         || die "git worktree add не удался"
     fi
     cwd="$wt"
+    ensure_git_exclude "$repo"
   fi
 
   # Деплой агента в целевую директорию (opencode найдёт .opencode/agents/<name>.md)
@@ -287,6 +369,8 @@ cmd_start() {
     "cwd=$(winpath "$cwd")" \
     "worktree=$make_worktree" \
     "branch=$branch" \
+    "baseBranch=$base_branch" \
+    "baseCommit=$base_commit" \
     "model=$model" \
     "variant=$variant" \
     "agent=$agent_name" \
@@ -390,6 +474,15 @@ cmd_delegate() {
   echo ""
   echo "=== результат ($job_id) ==="
   cat "$JOBS_DIR/$job_id/result.md" 2>/dev/null || echo "(результата нет)"
+
+  # Жизненный цикл ветки — после всех heal/verify-heal ретраев, самым
+  # последним действием: пустая worktree-задача убирает себя сама, иначе
+  # печатает готовую команду accept/discard. Для НЕ-worktree задач
+  # (worktree=0 в job.json) это no-op — agent.js сам проверяет флаг.
+  d="$(job_dir_of "$job_id" 2>/dev/null)" && {
+    echo ""
+    agent_js worktree-finish "$d"
+  }
 }
 
 cmd_chat() {
@@ -498,7 +591,7 @@ cmd_send() {
     die "сессия $session уже выполняется в другой задаче — параллельное продолжение ОДНОЙ сессии ломает её историю. Дождись завершения (agent list) или останови ту задачу (agent kill)"
   fi
 
-  local task repo cwd runner model verify worktree
+  local task repo cwd runner model verify worktree branch base_branch base_commit
   task="$(agent_js get "$src" task)"
   repo="$(agent_js get "$src" repo)"
   cwd="$(agent_js get "$src" cwd)"
@@ -507,6 +600,11 @@ cmd_send() {
   verify="$(agent_js get "$src" verifyCmd)"
   worktree="$(agent_js get "$src" worktree)"
   [[ "$worktree" == "1" || "$worktree" == "true" ]] && worktree=1 || worktree=0
+  # Ветка/база — прокидываем дальше, чтобы accept/discard/worktree-finish
+  # находили её и через продолжения сессии (send), а не только у корня.
+  branch="$(agent_js get "$src" branch)"
+  base_branch="$(agent_js get "$src" baseBranch)"
+  base_commit="$(agent_js get "$src" baseCommit)"
 
   # Проверка лимита параллельных задач
   local running_count max_parallel_limit
@@ -526,7 +624,8 @@ cmd_send() {
 
   agent_js new "$job_dir" \
     "id=$job_id" "task=$task" "runner=$runner" "repo=$repo" "cwd=$cwd" \
-    "worktree=$worktree" "model=$model" "verifyCmd=$verify" \
+    "worktree=$worktree" "branch=$branch" "baseBranch=$base_branch" "baseCommit=$base_commit" \
+    "model=$model" "verifyCmd=$verify" \
     "sessionId=$session" "resume=true" "continuesJob=$id" \
     || die "не удалось создать job.json"
 
@@ -621,25 +720,19 @@ cmd_clean() {
 }
 
 cmd_worktree_gc() {
-  local repo="" apply=""
+  local repo="" apply="" older_than=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --repo)   repo="${2:-}"; shift 2 ;;
-      --apply)  apply="--apply"; shift ;;
-      -h|--help) echo "agent worktree-gc --repo <path> [--apply]  (без --apply — только отчёт, ничего не удаляет)"; return 0 ;;
+      --repo)        repo="${2:-}"; shift 2 ;;
+      --apply)       apply="--apply"; shift ;;
+      --older-than)  older_than="${2:-}"; shift 2 ;;
+      -h|--help) echo "agent worktree-gc --repo <path> [--apply] [--older-than N]  (без --apply — только отчёт, ничего не удаляет; --older-than N — вместе с --apply удаляет и брошенные несмерджённые ветки agent/* старше N дней)"; return 0 ;;
       *) die "неизвестная опция: $1" ;;
     esac
   done
   [[ -n "$repo" ]] || die "--repo обязателен"
   [[ -d "$repo" ]] || die "репозиторий не найден: $repo"
-  agent_js worktree-gc "$(winpath "$repo")" "$apply"
-}
-
-cmd_learn() {
-  local id="${1:-}"
-  [[ -n "$id" ]] || die "нужен jobId"
-  local d; d="$(job_dir_of "$id")" || exit 1
-  agent_js learn "$d"
+  agent_js worktree-gc "$(winpath "$repo")" "$apply" "$older_than"
 }
 
 cmd_init() {
@@ -648,19 +741,42 @@ cmd_init() {
 
   [[ -d "$src" ]] || die "исходный skill не найден: $src (AI_HOME=$AI_HOME)"
 
-  if [[ -e "$dst" ]]; then
-    echo "skill уже установлен: $dst"
-    echo "  для переустановки (например, после обновления .ai): rm -rf \"$dst\" && agent init"
+  # Всегда перезаписываем — иначе после обновления .ai в ~/.claude/skills
+  # остаётся устаревшая инструкция (старые флаги, забытые команды), и
+  # ничего не подсказывает, что её нужно переустановить руками.
+  mkdir -p "$dst" || die "не удалось создать $dst"
+  # {{AI_HOME}} в исходнике — плейсхолдер, подставляем реальный путь этой
+  # машины при деплое: сам SKILL.md в репозитории остаётся переносимым
+  # (не завязан на то, куда его склонировали), команды внутри деплоенной
+  # копии получаются абсолютными и рабочими из любого cwd.
+  sed "s#{{AI_HOME}}#$AI_HOME#g" "$src/SKILL.md" > "$dst/SKILL.md" \
+    || die "не удалось скопировать SKILL.md"
+  echo "skill agent-bridge установлен/обновлён: $dst (пути закреплены за $AI_HOME)"
+
+  echo ""
+
+  # Обёртка ~/bin/agent — чтобы просто `agent ...` работал из любой
+  # директории без абсолютного пути. Git Bash на Windows видит ~/bin по
+  # умолчанию. Маркер отличает НАШУ обёртку от чужого файла с тем же
+  # именем — чужой не трогаем, только предупреждаем.
+  local bin_dir="${HOME}/bin" wrapper="${HOME}/bin/agent"
+  local marker="# managed-by: ai-orchestrator init — не редактировать руками"
+  mkdir -p "$bin_dir" 2>/dev/null || true
+  if [[ -e "$wrapper" ]] && ! grep -qF "$marker" "$wrapper" 2>/dev/null; then
+    echo "предупреждение: $wrapper уже существует и не похож на обёртку agent — не трогаю, установи вручную или убери файл"
   else
-    mkdir -p "$dst" || die "не удалось создать $dst"
-    # {{AI_HOME}} в исходнике — плейсхолдер, подставляем реальный путь этой
-    # машины при деплое: сам SKILL.md в репозитории остаётся переносимым
-    # (не завязан на то, куда его склонировали), команды внутри деплоенной
-    # копии получаются абсолютными и рабочими из любого cwd.
-    sed "s#{{AI_HOME}}#$AI_HOME#g" "$src/SKILL.md" > "$dst/SKILL.md" \
-      || die "не удалось скопировать SKILL.md"
-    echo "skill agent-bridge установлен глобально: $dst (пути закреплены за $AI_HOME)"
+    {
+      echo "#!/usr/bin/env bash"
+      echo "$marker"
+      echo "exec bash \"$AI_HOME/bin/agent\" \"\$@\""
+    } > "$wrapper" && chmod +x "$wrapper" \
+      && echo "обёртка установлена: $wrapper → $AI_HOME/bin/agent"
   fi
+
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) echo "  ~/bin не в PATH — добавь: echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.bashrc" ;;
+  esac
 
   echo ""
 
@@ -693,11 +809,10 @@ cmd_init() {
   fi
 
   echo ""
-  echo "Теперь ЛЮБОЙ проект может вызывать делегирование:"
-  echo "  /agent-bridge"
-  echo "  или просто скажи Claude «заделегируй это исследование через .ai»"
+  echo "Теперь из любой директории на этой машине: agent delegate <агент> \"<задача>\""
+  echo "(если 'agent: command not found' — PATH не обновился в текущем шелле, открой новый терминал)"
   echo ""
-  echo "Документация: .ai/README.md"
+  echo "Документация: $AI_HOME/README.md"
 }
 
 cmd_cron_daily() {
@@ -767,9 +882,10 @@ main() {
     wait)    cmd_wait "$@" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \
                || echo "(результата ещё нет)" ;;
-    learn)   cmd_learn "$@" ;;
+    accept)  d="$(job_dir_of "${1:-}")" || exit 1; agent_js accept "$d" ;;
+    discard) d="$(job_dir_of "${1:-}")" || exit 1; agent_js discard "$d" ;;
+    agents)  agent_js agent-list "$(winpath "$AI_HOME/agents")" ;;
     stats)   agent_js stats "$JOBS_DIR" "$*" ;;
-    capability) agent_js capability "${1:-}" ;;
     init)    cmd_init ;;
     dashboard) cmd_dashboard "$@" ;;
     cron-daily) cmd_cron_daily ;;
@@ -783,8 +899,9 @@ main() {
         *) die "agent agent: неизвестная подкоманда: $sub (list, show, create, delete)" ;;
       esac ;;
     heal)    d="$(job_dir_of "${1:-}")" || exit 1; agent_js heal "$d" ;;
-    ""|-h|--help|help) usage ;;
-    *) die "неизвестная команда: $cmd (agent --help)" ;;
+    ""|-h|--help|help)
+      if [[ "${1:-}" == "--all" ]]; then usage_all; else usage; fi ;;
+    *) die "неизвестная команда: $cmd (agent help --all — полный список)" ;;
   esac
 }
 

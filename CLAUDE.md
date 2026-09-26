@@ -14,20 +14,18 @@
 
 Один вызов вместо start→wait→result. Запускать ЦЕЛИКОМ как фоновый
 Bash (`run_in_background: true`) — тогда харнесс сам пришлёт уведомление
-о завершении:
+о завершении. `agent` установлен в PATH (`bin/agent init`) — вызывать
+просто `agent`, без пути:
 
 ```bash
-# agent list — сверить актуальный ростер один раз за сессию (растёт, не
-# хардкодить): .ai/bin/agent agent list
+# agent agents — сверить актуальный ростер один раз за сессию (растёт, не
+# хардкодить).
 
-# --agent вместо имени модели — думай задачей, не раннером. Какая
-# модель сейчас за research/coding — не запоминать, настраивается в
-# agents/*.json/дашборде (см. docs/workflow.md); переопределить — --model.
-.ai/bin/agent delegate --task my-task --repo /path/to/project \
-  --agent research --prompt "сделай ..."
-
-.ai/bin/agent delegate --task my-task --repo /path/to/project \
-  --agent coding --verify "npm test" --prompt-file tz.md
+# Позиционная форма: агент + задача, без --task/--repo/--model — думай
+# задачей, не раннером. Какая модель сейчас за research/coding — не
+# запоминать, настраивается в agents/*.json (см. docs/workflow.md).
+agent delegate research "сделай ..."
+agent delegate coding "реализуй ..." --verify "npm test"
 ```
 
 `delegate` сам делает start + wait + (при необходимости) один heal-ретрай +
@@ -46,6 +44,10 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 - **`verify: passed` ≠ задача сделана.** Всегда сверять поле `changedFiles`
   в `agent status` / `git diff --stat`: пустой дифф при `passed` = агент
   ничего не тронул.
+- **Worktree-задачу нужно закрыть.** `delegate` для worktree-агента в
+  конце печатает `agent accept <jobId>` (squash-мердж в текущую ветку) или
+  `agent discard <jobId>` (выбросить) — без этого ветка/worktree остаются
+  висеть. Пустая задача (агент ничего не сделал) убирает себя сама.
 
 ## Структура
 
@@ -69,7 +71,6 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
   test/                  юнит-тесты (diagnosis, diffStatusLines)
   scripts/               разовые обслуживающие скрипты
   jobs/<id>/             состояние задач + out.jsonl + diagnosis.json
-  memory/index.json      долговременная память
 ```
 
 ## Полные правила делегирования
