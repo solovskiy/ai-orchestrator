@@ -228,6 +228,7 @@ agent agents                # name, model, worktree yes/no, tools (= agent agent
 agent agent show <name>     # full JSON, including description —
                              # explicitly says when to pick a neighboring agent
 agent agent create <name>   # create a new agent (scaffold in agents/<name>.json)
+agent agent delete <name>   # remove an agent (agents/<name>.json)
 ```
 
 ### Browser agents (two independent, do not confuse)

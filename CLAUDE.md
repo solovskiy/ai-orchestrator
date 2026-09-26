@@ -58,7 +58,7 @@ agent delegate coding "реализуй ..." --verify "npm test"
   lib/run-job.sh         обёртка фонового запуска (авто-коммит, verify)
   lib/diagnosis.js       классификация провалов
   lib/models.json        маппинг model→runner
-  lib/runners/*.js       адаптеры: opencode, claude, gemini, codex
+  lib/runners/*.js       адаптеры: opencode, claude, claude-ds, gemini, codex, antigravity
   lib/deploy-agent.js    JSON → opencode agent.md (YAML frontmatter)
   agents/*.json          определения агентов: model, variant, worktree,
                           permissions, systemPrompt (v3)
@@ -68,7 +68,8 @@ agent delegate coding "реализуй ..." --verify "npm test"
     plugins/             деплоированные плагины (генерируется)
     opencode.json        конфиг opencode с путём к плагинам
   hooks/                 PreToolUse-хуки (напоминания о делегировании)
-  test/                  юнит-тесты (diagnosis, diffStatusLines)
+  test/                  юнит-тесты (agent-crud, dashboard-api, deploy-agent,
+                          diagnosis, diffStatusLines, pad, worktree-lifecycle)
   scripts/               разовые обслуживающие скрипты
   jobs/<id>/             состояние задач + out.jsonl + diagnosis.json
 ```
