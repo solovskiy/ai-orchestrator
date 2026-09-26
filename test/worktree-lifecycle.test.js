@@ -90,7 +90,7 @@ test('accept: squash-мердж коммита ветки — новый ком�
   assert.ok(subject.startsWith('agent(accept-ok):'), `subject: ${subject}`);
 
   const content = fs.readFileSync(path.join(repo, 'a.txt'), 'utf8');
-  assert.strictEqual(content, 'orig\nadded-by-agent\n');
+  assert.strictEqual(content.replace(/\r\n/g, '\n'), 'orig\nadded-by-agent\n');
 
   const job = readJobJson(jobDir);
   assert.strictEqual(job.integration, 'accepted');
