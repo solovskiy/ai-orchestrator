@@ -279,7 +279,9 @@ agent wait <jobId1> <jobId2> ...
 Полная таблица префикс→раннер — в `README.md` (раздел «Мультимодельность»).
 Кратко: `opencode/*` и `deepseek/*` и `openai/*` и `anthropic/*` → opencode; `claude/*` →
 Claude Code CLI; `claude-ds/*` → тот же Claude Code CLI, но через DeepSeek
-(нужен `DEEPSEEK_API_KEY`); `gemini/*` → Gemini CLI.
+(нужен `DEEPSEEK_API_KEY`); `gemini/*` → Gemini CLI; `antigravity/*`/`agy/*` →
+Google Antigravity CLI (`agy`) — единственный раннер помимо opencode,
+подтверждённый на реальных задачах в headless-режиме (на 2026-09-26).
 
 Дефолт (если ни модель агента, ни `--model` не заданы) —
 `opencode/deepseek-v4-flash-free` ($0, OpenCode Zen, без логина). Платные

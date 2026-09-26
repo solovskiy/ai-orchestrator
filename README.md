@@ -295,6 +295,7 @@ automatically via `--model`:
 | `anthropic/*` | opencode | **production** |
 | `claude/*` | claude | **experimental** — untested, cost tracking not implemented |
 | `claude-ds/*` | claude-ds | **experimental** — Claude Code CLI routed through DeepSeek's Anthropic-compatible endpoint (`https://api.deepseek.com/anthropic`); requires `DEEPSEEK_API_KEY` in the environment. Same binary/output format as `claude`, untested on real tasks |
+| `antigravity/*`, `agy/*` | antigravity | **verified** — Google Antigravity CLI (`agy`), headless mode confirmed live (start/wait/result/resume all tested 2026-09-26). Always runs with `--dangerously-skip-permissions` (headless mode auto-denies tool calls otherwise, without hanging). No dollar cost, tokens only |
 | `gemini/*` | gemini | **experimental** — untested, CLI flags not verified |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex does not emit JSON) |
 
@@ -304,7 +305,7 @@ set the runner explicitly: `--runner opencode --model claude/sonnet-4`.
 `--model`/`--runner`/`--variant` are undocumented aliases (not shown in
 `agent --help`/`help --all`) — normal use is to pick an agent, not a model.
 
-Runners other than opencode are experimental stubs. They are correctly
+Runners other than opencode and antigravity are experimental stubs. They are correctly
 registered in `lib/models.json` and `lib/runners/`, but **not ready for
 use**: the claude/claude-ds/gemini adapters are untested on real tasks,
 and codex cannot read the output (Codex CLI does not emit a JSON stream).
@@ -318,7 +319,7 @@ and codex cannot read the output (Codex CLI does not emit a JSON stream).
   lib/agent.js           JSON handling, event stream parsing, table output
   lib/diagnosis.js       failure classification (outcome for heal)
   lib/models.json        model prefix → runner mapping
-  lib/runners/*.js       executor adapters (opencode, claude, claude-ds, gemini, codex)
+  lib/runners/*.js       executor adapters (opencode, claude, claude-ds, gemini, codex, antigravity)
   lib/dashboard.js       web dashboard (HTTP API + server, localhost)
   lib/dashboard.html     dashboard SPA interface (vanilla JS)
   agents/*.json          agent definitions (canonical JSON: model, variant,

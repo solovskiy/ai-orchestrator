@@ -8,5 +8,7 @@
   "google": "gemini",
   "claude": "claude",
   "claude-ds": "claude-ds",
-  "codex": "codex"
+  "codex": "codex",
+  "antigravity": "antigravity",
+  "agy": "antigravity"
 }

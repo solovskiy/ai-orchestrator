@@ -236,6 +236,7 @@ git-репозиторий: `<path>`» ещё до запуска модели).
 | `anthropic/*` | opencode | **production** |
 | `claude/*` | claude | **experimental** — не тестирован, cost tracking не реализован |
 | `claude-ds/*` | claude-ds | **experimental** — Claude Code CLI, направленный через Anthropic-совместимый эндпоинт DeepSeek (`https://api.deepseek.com/anthropic`); требует `DEEPSEEK_API_KEY` в окружении. Тот же бинарник/формат вывода, что у `claude`, не тестирован на реальных задачах |
+| `antigravity/*`, `agy/*` | antigravity | **verified** — Google Antigravity CLI (`agy`), headless-режим проверен вживую (start/wait/result/resume — всё протестировано 2026-09-26). Всегда запускается с `--dangerously-skip-permissions` (иначе headless-режим молча auto-denies tool-вызовы, без зависания). Доллары не считает, только токены |
 | `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
 
@@ -246,7 +247,7 @@ git-репозиторий: `<path>`» ещё до запуска модели).
 показаны в `agent --help`/`help --all`) — обычный путь это выбрать
 агента, а не модель.
 
-Раннеры, кроме opencode — экспериментальные заглушки. Они корректно
+Раннеры, кроме opencode и antigravity — экспериментальные заглушки. Они корректно
 зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
 использованию**: адаптеры claude/claude-ds/gemini не тестированы на реальных
 задачах, а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
@@ -260,7 +261,7 @@ git-репозиторий: `<path>`» ещё до запуска модели).
   lib/agent.js           работа с JSON, разбор потока событий, вывод таблиц
   lib/diagnosis.js       классификация провалов (outcome для heal)
   lib/models.json        маппинг префикса модели → runner
-  lib/runners/*.js       адаптеры исполнителей (opencode, claude, claude-ds, gemini, codex)
+  lib/runners/*.js       адаптеры исполнителей (opencode, claude, claude-ds, gemini, codex, antigravity)
   lib/dashboard.js       веб-дашборд (HTTP API + сервер, localhost)
   lib/dashboard.html     SPA-интерфейс дашборда (vanilla JS)
   agents/*.json          определения агентов (канонический JSON: model, variant,
