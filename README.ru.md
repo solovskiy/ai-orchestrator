@@ -275,7 +275,7 @@ git-репозиторий: `<path>`» ещё до запуска модели).
 | `openai/*` | opencode | **production** |
 | `anthropic/*` | opencode | **production** |
 | `claude/*` | claude | **experimental** — не тестирован, cost tracking не реализован |
-| `claude-ds/*` | claude-ds | **experimental** — Claude Code CLI, направленный через Anthropic-совместимый эндпоинт DeepSeek (`https://api.deepseek.com/anthropic`); требует `DEEPSEEK_API_KEY` в окружении. Тот же бинарник/формат вывода, что у `claude`, не тестирован на реальных задачах |
+| `claude-ds/*` | claude-ds | **verified** — Claude Code CLI через Anthropic-совместимый эндпоинт DeepSeek (`https://api.deepseek.com/anthropic`), требует `DEEPSEEK_API_KEY`. Модель — имя DeepSeek напрямую: `claude-ds/deepseek-v4-flash`, `claude-ds/deepseek-v4-pro`. Запуск `--bare --strict-mcp-config` (без хуков, CLAUDE.md, автопамяти и MCP пользователя) и `--dangerously-skip-permissions`; `systemPrompt`/`maxSteps`/`permissions: deny` берутся из `agents/<name>.json`. MCP-серверы из `mcp: [...]` агента подключаются через `--mcp-config` (определения — из `~/.config/opencode/opencode.json`). **Песочницы opencode нет**: агент технически может писать за пределами `--repo`. Сквозной прогон через `agent delegate` проверен 2026-10-22 (research, coding в worktree, browser с MCP). Доллары не считает, только токены |
 | `antigravity/*`, `agy/*` | antigravity | **verified** — Google Antigravity CLI (`agy`), headless-режим проверен вживую (start/wait/result/resume — всё протестировано 2026-09-26). Всегда запускается с `--dangerously-skip-permissions` (иначе headless-режим молча auto-denies tool-вызовы, без зависания). Доллары не считает, только токены |
 | `gemini/*` | gemini | **experimental** — не тестирован, флаги CLI не проверены |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex не выдаёт JSON) |
@@ -287,9 +287,9 @@ git-репозиторий: `<path>`» ещё до запуска модели).
 показаны в `agent --help`/`help --all`) — обычный путь это выбрать
 агента, а не модель.
 
-Раннеры, кроме opencode и antigravity — экспериментальные заглушки. Они корректно
+Раннеры, кроме opencode, antigravity и claude-ds — экспериментальные заглушки. Они корректно
 зарегистрированы в `lib/models.json` и `lib/runners/`, но **не готовы к
-использованию**: адаптеры claude/claude-ds/gemini не тестированы на реальных
+использованию**: адаптеры claude/gemini не тестированы на реальных
 задачах, а codex не сможет прочитать вывод (CLI Codex не отдаёт JSON-поток).
 
 ## Как устроено

@@ -1,7 +1,7 @@
 {
   "name": "copywriter",
   "runner": "",
-  "model": "opencode/deepseek-v4-flash-free",
+  "model": "claude-ds/deepseek-v4-flash",
   "variant": "medium",
   "mode": "primary",
   "worktree": true,

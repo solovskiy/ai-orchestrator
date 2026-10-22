@@ -295,7 +295,7 @@ automatically via `--model`:
 | `openai/*` | opencode | **production** |
 | `anthropic/*` | opencode | **production** |
 | `claude/*` | claude | **experimental** — untested, cost tracking not implemented |
-| `claude-ds/*` | claude-ds | **experimental** — Claude Code CLI routed through DeepSeek's Anthropic-compatible endpoint (`https://api.deepseek.com/anthropic`); requires `DEEPSEEK_API_KEY` in the environment. Same binary/output format as `claude`, untested on real tasks |
+| `claude-ds/*` | claude-ds | **verified** — Claude Code CLI routed through DeepSeek's Anthropic-compatible endpoint (`https://api.deepseek.com/anthropic`); requires `DEEPSEEK_API_KEY`. Model is the DeepSeek name directly: `claude-ds/deepseek-v4-flash`, `claude-ds/deepseek-v4-pro`. Runs with `--bare --strict-mcp-config` (no user hooks, CLAUDE.md, auto-memory or MCP servers) and `--dangerously-skip-permissions`; `systemPrompt`/`maxSteps`/`permissions: deny` come from `agents/<name>.json`. MCP servers from the agent’s `mcp: [...]` are passed via `--mcp-config` (definitions from `~/.config/opencode/opencode.json`). **No opencode sandbox**: the agent can technically write outside `--repo`. End-to-end run via `agent delegate` verified 2026-10-22 (research, coding in worktree, browser with MCP). No dollar cost, tokens only |
 | `antigravity/*`, `agy/*` | antigravity | **verified** — Google Antigravity CLI (`agy`), headless mode confirmed live (start/wait/result/resume all tested 2026-09-26). Always runs with `--dangerously-skip-permissions` (headless mode auto-denies tool calls otherwise, without hanging). No dollar cost, tokens only |
 | `gemini/*` | gemini | **experimental** — untested, CLI flags not verified |
 | `codex/*` | codex | **experimental** — parser mismatch (Codex does not emit JSON) |
@@ -306,9 +306,9 @@ set the runner explicitly: `--runner opencode --model claude/sonnet-4`.
 `--model`/`--runner`/`--variant` are undocumented aliases (not shown in
 `agent --help`/`help --all`) — normal use is to pick an agent, not a model.
 
-Runners other than opencode and antigravity are experimental stubs. They are correctly
+Runners other than opencode, antigravity and claude-ds are experimental stubs. They are correctly
 registered in `lib/models.json` and `lib/runners/`, but **not ready for
-use**: the claude/claude-ds/gemini adapters are untested on real tasks,
+use**: the claude/gemini adapters are untested on real tasks,
 and codex cannot read the output (Codex CLI does not emit a JSON stream).
 
 ## Architecture

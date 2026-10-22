@@ -1,7 +1,7 @@
 {
   "name": "research",
   "runner": "",
-  "model": "opencode/deepseek-v4-flash-free",
+  "model": "claude-ds/deepseek-v4-flash",
   "variant": null,
   "mode": "primary",
   "worktree": false,
