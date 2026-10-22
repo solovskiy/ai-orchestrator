@@ -270,6 +270,109 @@ async function runTests() {
     try { fs.unlinkSync(testGlobalAgentMd); } catch {}
   }
 
+  // ---------------------------------------------------------------- безопасное сохранение агента
+  // Регрессия «промпт пропадает при сохранении»: создание поверх существующего,
+  // не-объектное тело, обрезанный файл и устаревшая форма не должны ломать агента.
+
+  const guardName = 'test-api-guard';
+  const guardFile = path.join(AGENTS_DIR, guardName + '.json');
+  const guardMd = path.join(AGENTS_DIR, '..', '.opencode', 'agents', guardName + '.md');
+  const brokenFile = path.join(AGENTS_DIR, 'test-api-broken.json');
+  const guardAgent = {
+    name: guardName, description: 'guard', mode: 'primary', model: 'deepseek/deepseek-v4-flash',
+    systemPrompt: 'ВАЖНЫЙ ПРОМПТ, который нельзя потерять', permissions: { bash: 'allow' }, mcp: ['context7'],
+  };
+  let guardHome;
+  const guardOrigHome = process.env.HOME;
+
+  // сырой запрос: req() выше не умеет слать не-объектное тело (null, [], "x")
+  function rawBodyReq(method, urlPath, rawBody) {
+    return new Promise((resolve, reject) => {
+      const u = new URL(baseUrl + urlPath);
+      const r = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method, timeout: 5000,
+        headers: { 'Content-Type': 'application/json' } }, (res) => {
+        let body = '';
+        res.on('data', c => { body += c; });
+        res.on('end', () => { let j; try { j = JSON.parse(body); } catch {} resolve({ status: res.statusCode, body, json: j }); });
+      });
+      r.on('error', reject);
+      r.write(rawBody);
+      r.end();
+    });
+  }
+
+  try {
+    guardHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-dashboard-guard-home-')); // глобальный деплой — во временный HOME
+    process.env.HOME = guardHome;
+
+    await test('POST с _create поверх существующего агента — 409 exists, файл не тронут', async () => {
+      assert.strictEqual((await req('POST', `/api/agents/${guardName}`, guardAgent)).status, 200);
+      const before = fs.readFileSync(guardFile, 'utf8');
+      const r = await req('POST', `/api/agents/${guardName}`, { name: guardName, systemPrompt: '', _create: true });
+      assert.strictEqual(r.status, 409, r.body);
+      assert.strictEqual(r.json.code, 'exists');
+      assert.strictEqual(fs.readFileSync(guardFile, 'utf8'), before, 'файл агента изменился');
+      assert.ok(JSON.parse(before).systemPrompt.startsWith('ВАЖНЫЙ ПРОМПТ'));
+    });
+
+    await test('POST с _create для нового имени — создаёт, служебные поля в файл не попадают', async () => {
+      fs.unlinkSync(guardFile);
+      const r = await req('POST', `/api/agents/${guardName}`, { ...guardAgent, _create: true, _loadedAt: 1 });
+      assert.strictEqual(r.status, 200, r.body);
+      const saved = JSON.parse(fs.readFileSync(guardFile, 'utf8'));
+      for (const k of ['_create', '_loadedAt', '_mtime']) assert.ok(!(k in saved), `в файле остался ${k}`);
+      assert.strictEqual(saved.systemPrompt, guardAgent.systemPrompt);
+    });
+
+    await test('POST с устаревшим _loadedAt — 409 stale, файл не тронут; со свежим — сохраняет', async () => {
+      const before = fs.readFileSync(guardFile, 'utf8');
+      const detail = (await get(`/api/agents/${guardName}`)).json;
+      const stale = await req('POST', `/api/agents/${guardName}`, { ...guardAgent, systemPrompt: '', _loadedAt: detail._mtime - 5000 });
+      assert.strictEqual(stale.status, 409, stale.body);
+      assert.strictEqual(stale.json.code, 'stale');
+      assert.strictEqual(fs.readFileSync(guardFile, 'utf8'), before);
+
+      const fresh = await req('POST', `/api/agents/${guardName}`, { ...guardAgent, description: 'новое', _loadedAt: detail._mtime });
+      assert.strictEqual(fresh.status, 200, fresh.body);
+      assert.strictEqual(JSON.parse(fs.readFileSync(guardFile, 'utf8')).description, 'новое');
+    });
+
+    await test('POST с телом null / [] / "x" — 400, сервер жив, файл не тронут', async () => {
+      const before = fs.readFileSync(guardFile, 'utf8');
+      for (const raw of ['null', '[]', '"x"', '12']) {
+        const r = await rawBodyReq('POST', `/api/agents/${guardName}`, raw);
+        assert.strictEqual(r.status, 400, `${raw}: ${r.body}`);
+      }
+      assert.strictEqual(fs.readFileSync(guardFile, 'utf8'), before);
+      assert.strictEqual((await get('/api/agents')).status, 200, 'сервер должен остаться живым');
+    });
+
+    await test('сохранение атомарное: после записи в agents/ нет .tmp, файл — валидный JSON', async () => {
+      assert.strictEqual((await req('POST', `/api/agents/${guardName}`, guardAgent)).status, 200);
+      const leftovers = fs.readdirSync(AGENTS_DIR).filter(f => f.startsWith(guardName) && f.endsWith('.tmp'));
+      assert.deepStrictEqual(leftovers, []);
+      const text = fs.readFileSync(guardFile, 'utf8');
+      assert.ok(text.endsWith('}\n'));
+      assert.strictEqual(JSON.parse(text).systemPrompt, guardAgent.systemPrompt);
+      const mdLeft = fs.readdirSync(path.dirname(guardMd)).filter(f => f.startsWith(guardName) && f.endsWith('.tmp'));
+      assert.deepStrictEqual(mdLeft, []);
+    });
+
+    await test('GET /api/agents — битый JSON одного агента не прячет остальных', async () => {
+      fs.writeFileSync(brokenFile, '{"name":"test-api-broken","systemPrompt":"обрез');
+      const r = await get('/api/agents');
+      assert.strictEqual(r.status, 200);
+      const names = r.json.map(a => a.name);
+      assert.ok(names.includes('coding') && names.includes(guardName), `список: ${names.join(', ')}`);
+      assert.ok(!names.includes('test-api-broken'));
+    });
+
+  } finally {
+    process.env.HOME = guardOrigHome;
+    try { fs.rmSync(guardHome, { recursive: true, force: true }); } catch {}
+    for (const f of [guardFile, guardMd, brokenFile]) { try { fs.unlinkSync(f); } catch {} }
+  }
+
   // ---------------------------------------------------------------- agent export
 
   await test('GET /api/agents/coding/export — возвращает markdown', async () => {
