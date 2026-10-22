@@ -592,7 +592,7 @@ cmd_send() {
     die "сессия $session уже выполняется в другой задаче — параллельное продолжение ОДНОЙ сессии ломает её историю. Дождись завершения (agent list) или останови ту задачу (agent kill)"
   fi
 
-  local task repo cwd runner model verify worktree branch base_branch base_commit
+  local task repo cwd runner model verify worktree branch base_branch base_commit agent_name variant
   task="$(agent_js get "$src" task)"
   repo="$(agent_js get "$src" repo)"
   cwd="$(agent_js get "$src" cwd)"
@@ -606,6 +606,12 @@ cmd_send() {
   branch="$(agent_js get "$src" branch)"
   base_branch="$(agent_js get "$src" baseBranch)"
   base_commit="$(agent_js get "$src" baseCommit)"
+  # agent/variant — роль агента (системный промпт, deny-права, MCP, лимит шагов
+  # --max-turns у claude; --agent/--variant у opencode). Без них продолжение
+  # запускалось «голым» раннером и теряло лимит и настройки. Ищем по цепочке,
+  # чтобы вылечить и продолжения, созданные до этой правки.
+  agent_name="$(agent_js lineage-get "$src" agent)"
+  variant="$(agent_js lineage-get "$src" variant)"
 
   # Проверка лимита параллельных задач
   local running_count max_parallel_limit
@@ -626,7 +632,7 @@ cmd_send() {
   agent_js new "$job_dir" \
     "id=$job_id" "task=$task" "runner=$runner" "repo=$repo" "cwd=$cwd" \
     "worktree=$worktree" "branch=$branch" "baseBranch=$base_branch" "baseCommit=$base_commit" \
-    "model=$model" "verifyCmd=$verify" \
+    "model=$model" "agent=$agent_name" "variant=$variant" "verifyCmd=$verify" \
     "sessionId=$session" "resume=true" "continuesJob=$id" \
     || die "не удалось создать job.json"
 
