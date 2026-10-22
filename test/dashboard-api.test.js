@@ -413,6 +413,127 @@ async function runTests() {
     try { fs.rmSync(tmpJobDir, { recursive: true, force: true }); } catch {}
   }
 
+  // ---------------------------------------------------------------- сессии, пауза по лимиту шагов, действия над задачей
+
+  await test('classifyStopReason — лимит шагов отличается от настоящего сбоя', () => {
+    const { classifyStopReason } = require('../lib/agent.js');
+    assert.strictEqual(classifyStopReason({ status: 'failed', error: 'error_max_turns' }), 'max_steps');
+    assert.strictEqual(classifyStopReason({ status: 'failed', error: 'Reached maximum number of turns (20)' }), 'max_steps');
+    assert.strictEqual(classifyStopReason({ status: 'failed', error: 'API 500: upstream timeout' }), null);
+    assert.strictEqual(classifyStopReason({ status: 'failed', error: null }), null);
+    // не failed — причина остановки не нужна, даже если в error осталось слово из шаблона
+    assert.strictEqual(classifyStopReason({ status: 'completed', error: 'error_max_turns' }), null);
+    assert.strictEqual(classifyStopReason(null), null);
+  });
+
+  // fixtures пишем в реальную jobs/ (как и тесты выше) и убираем за собой
+  const chainStamp = Date.now();
+  const chainIds = {
+    root: 'chain-test-root-' + chainStamp,
+    child: 'chain-test-child-' + chainStamp,
+    broken: 'chain-test-broken-' + chainStamp,
+    running: 'chain-test-running-' + chainStamp,
+    nosess: 'chain-test-nosess-' + chainStamp,
+    wt: 'chain-test-wt-' + chainStamp,
+  };
+  const chainDirs = Object.values(chainIds).map(id => path.join(__dirname, '..', 'jobs', id));
+
+  function mkChainJob(id, fields, prompt) {
+    const dir = path.join(__dirname, '..', 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const job = { id, task: 'chain-test', model: 'claude-ds/deepseek-v4-pro', runner: 'claude-ds',
+      createdAt: new Date().toISOString(), ...fields };
+    fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(job, null, 2) + '\n');
+    if (prompt != null) fs.writeFileSync(path.join(dir, 'prompt.md'), prompt);
+  }
+
+  // запрос с произвольными заголовками (Host/Origin) — req() выше их не умеет
+  function rawReq(method, p, headers) {
+    return new Promise((resolve, reject) => {
+      const u = new URL(baseUrl);
+      const r = http.request({ hostname: u.hostname, port: u.port, path: p, method, headers, timeout: 5000 }, (res) => {
+        let body = '';
+        res.on('data', c => { body += c; });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      });
+      r.on('error', reject);
+      r.end();
+    });
+  }
+
+  try {
+    mkChainJob(chainIds.root, { status: 'failed', sessionId: 'sess-chain-' + chainStamp, error: 'error_max_turns' }, 'Реализуй авторизацию');
+    mkChainJob(chainIds.child, { status: 'completed', sessionId: 'sess-chain-' + chainStamp, continuesJob: chainIds.root }, 'допиши тесты\nи документацию');
+    mkChainJob(chainIds.broken, { status: 'failed', error: 'API 500: upstream timeout' }, 'x');
+    mkChainJob(chainIds.running, { status: 'running', sessionId: 'sess-run-' + chainStamp }, 'x');
+    mkChainJob(chainIds.nosess, { status: 'completed' }, 'x');
+    mkChainJob(chainIds.wt, { status: 'completed', worktree: 0, sessionId: 'sess-wt-' + chainStamp }, 'x');
+
+    await test('GET /api/jobs — сводка связывает задачи одной сессии и помечает паузу по лимиту шагов', async () => {
+      const r = await get('/api/jobs?limit=200');
+      assert.strictEqual(r.status, 200);
+      const byId = Object.fromEntries(r.json.jobs.map(j => [j.id, j]));
+      const root = byId[chainIds.root], child = byId[chainIds.child], broken = byId[chainIds.broken];
+      assert.ok(root && child && broken, 'fixture-задачи должны быть в выдаче');
+      assert.strictEqual(root.stopReason, 'max_steps', 'лимит шагов → max_steps');
+      assert.strictEqual(root.status, 'failed', 'сырой статус не подменяется — это решает UI');
+      assert.strictEqual(child.stopReason, null);
+      assert.strictEqual(child.sessionId, root.sessionId, 'общая сессия');
+      assert.strictEqual(child.continuesJob, chainIds.root);
+      assert.strictEqual(child.promptPreview, 'допиши тесты', 'в превью — первая строка ТЗ продолжения');
+      assert.strictEqual(root.promptPreview, null, 'у корня превью не нужно');
+      assert.strictEqual(broken.stopReason, null, 'настоящий сбой остаётся сбоем');
+    });
+
+    await test('GET /api/jobs/:id — деталь содержит stopReason', async () => {
+      const r = await get('/api/jobs/' + chainIds.root);
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.json.stopReason, 'max_steps');
+    });
+
+    await test('POST /api/jobs/:id/send — валидация: 404, пустое сообщение, running, нет сессии, небезопасный id', async () => {
+      assert.strictEqual((await req('POST', '/api/jobs/nonexistent-send-test/send', { message: 'x' })).status, 404);
+      assert.strictEqual((await req('POST', '/api/jobs/' + chainIds.child + '/send', { message: '   ' })).status, 400, 'пустое сообщение');
+      assert.strictEqual((await req('POST', '/api/jobs/' + chainIds.running + '/send', { message: 'x' })).status, 409, 'running');
+      assert.strictEqual((await req('POST', '/api/jobs/' + chainIds.nosess + '/send', { message: 'x' })).status, 400, 'нет sessionId');
+      // id, начинающийся с «-», не должен дойти до CLI как флаг
+      assert.strictEqual((await req('POST', '/api/jobs/--help/send', { message: 'x' })).status, 400, 'небезопасный id');
+    });
+
+    await test('POST /api/jobs/:id/accept|discard — валидация: 404, не worktree, running', async () => {
+      for (const action of ['accept', 'discard']) {
+        assert.strictEqual((await req('POST', '/api/jobs/nonexistent-' + action + '-test/' + action)).status, 404, action + ' 404');
+        assert.strictEqual((await req('POST', '/api/jobs/' + chainIds.wt + '/' + action)).status, 400, action + ': не worktree');
+      }
+      // running + worktree → 409 (пишем job заново с worktree=1)
+      mkChainJob(chainIds.running, { status: 'running', worktree: 1, sessionId: 'sess-run-' + chainStamp }, 'x');
+      assert.strictEqual((await req('POST', '/api/jobs/' + chainIds.running + '/accept')).status, 409, 'running');
+    });
+
+    await test('защита: чужой Origin/Host отклоняются, свой Origin и запросы без Origin проходят', async () => {
+      const u = new URL(baseUrl);
+      const own = u.host;
+      assert.strictEqual((await rawReq('POST', '/api/cleanup', { Host: own, Origin: 'http://evil.example' })).status, 403, 'чужой Origin на POST');
+      assert.strictEqual((await rawReq('DELETE', '/api/jobs/x', { Host: own, Origin: 'http://evil.example' })).status, 403, 'чужой Origin на DELETE');
+      assert.strictEqual((await rawReq('GET', '/api/jobs?limit=1', { Host: 'evil.example' })).status, 403, 'чужой Host (DNS-rebinding)');
+      assert.strictEqual((await rawReq('GET', '/api/jobs?limit=1', { Host: own })).status, 200, 'без Origin');
+      assert.strictEqual((await rawReq('POST', '/api/jobs/nonexistent-origin-test/kill', { Host: own, Origin: baseUrl })).status, 404, 'свой Origin проходит дальше');
+    });
+
+    await test('WebSocket — чужой Origin не принимается', async () => {
+      const wsUrl = 'ws://' + new URL(baseUrl).host;
+      await new Promise((resolve, reject) => {
+        const c = new WebSocket(wsUrl, { headers: { Origin: 'http://evil.example' } });
+        const timer = setTimeout(() => reject(new Error('таймаут')), 3000);
+        c.on('open', () => { clearTimeout(timer); c.close(); reject(new Error('сокет открылся для чужого Origin')); });
+        c.on('unexpected-response', (_q, res) => { clearTimeout(timer); assert.strictEqual(res.statusCode, 401); resolve(); });
+        c.on('error', () => { clearTimeout(timer); resolve(); }); // отказ рукопожатия
+      });
+    });
+  } finally {
+    for (const d of chainDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
+  }
+
   // ---------------------------------------------------------------- session-log
 
   const sessJobId = 'test-session-log';

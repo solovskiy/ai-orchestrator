@@ -20,16 +20,6 @@
   }
 }
 
-/* xterm.js terminal styles */
-#terminal {
-  height: 300px;
-  background: var(--row-hover);
-  border-radius: 6px;
-  padding: 12px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 12px;
-}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
@@ -72,7 +62,7 @@ tr { cursor: pointer; }
 .stat .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .chart { display: flex; align-items: flex-end; gap: 2px; height: 80px; margin: 8px 0; }
 .chart div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; }
-.detail-panel { position: fixed; top: 0; right: 0; width: 55%; height: 100vh; background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; padding: 20px; z-index: 10; box-shadow: -4px 0 12px rgba(0,0,0,.08); display: none; }
+.detail-panel { position: fixed; top: 0; right: 0; width: min(780px, 100%); height: 100vh; background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; padding: 20px; z-index: 10; box-shadow: -4px 0 12px rgba(0,0,0,.08); display: none; }
 .detail-panel.open { display: block; }
 .detail-panel .close { position: sticky; top: 8px; float: right; background: var(--border); border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-size: 14px; color: var(--fg); }
 .detail-panel pre { background: var(--row-hover); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
@@ -177,11 +167,94 @@ label .tip { font-weight: normal; }
 #agent-editor h3 { margin-bottom: 12px; font-size: 15px; }
 .ae-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 textarea { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
-</style>
 
-<!-- xterm.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.css">
+/* ---- общие мелочи */
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+code { font-family: monospace; font-size: 12px; background: var(--row-hover); padding: 0 4px; border-radius: 3px; }
+.empty { text-align: center; color: var(--muted); padding: 40px 12px; line-height: 1.8; }
+.empty.err { color: var(--red); }
+.empty button, button.mini { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px; }
+.jobs-count { margin-left: auto; align-self: center; color: var(--muted); font-size: 12px; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--accent); }
+td.task { max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
+tr.selected td { background: var(--accent-bg); }
+tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.filters select { width: auto; margin-top: 0; }
+.filters input[type=search] { width: 240px; margin: 0; }
+
+/* ---- статусы «пауза» (лимит шагов) и «продолжена» — не ошибки */
+.status.paused { background: #fef9c3; color: #854d0e; border: 1px dashed #ca8a04; }
+.status.continued { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
+@media (prefers-color-scheme: dark) {
+  .status.paused { background: #422006; color: #fde68a; border-color: #a16207; }
+}
+
+/* ---- связка задач одной сессии в таблице: точка + вертикальная линия «1/3 → 2/3 → 3/3» */
+th.chain, td.chain { width: 62px; padding: 0 4px 0 8px; position: relative; white-space: nowrap; }
+td.chain .ch-n { font-size: 10px; color: var(--muted); margin-left: 4px; position: relative; z-index: 1; }
+.ch-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); border: 2px solid var(--bg); box-sizing: content-box; vertical-align: middle; position: relative; z-index: 1; }
+tr:hover .ch-dot { border-color: var(--row-hover); }
+tr.selected .ch-dot { border-color: var(--accent-bg); }
+.ch-dot.completed { background: var(--green); }
+.ch-dot.failed { background: var(--red); }
+.ch-dot.running { background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+.ch-dot.paused { background: var(--yellow); }
+.ch-dot.continued { background: var(--yellow); opacity: .5; }
+.ch-dot.killed { background: #d97706; }
+tr.ch-up td.chain::before, tr.ch-down td.chain::after { content: ''; position: absolute; left: 14px; width: 2px; background: var(--accent); opacity: .45; }
+tr.ch-up td.chain::before { top: -1px; height: calc(50% + 1px); }
+tr.ch-down td.chain::after { bottom: -1px; height: calc(50% + 1px); }
+tr.ch-down td { border-bottom-style: dashed; }
+.ch-arrow { color: var(--accent); }
+
+/* ---- карточка задачи */
+.detail-panel h3 { font-size: 16px; line-height: 1.3; margin: 2px 36px 8px 0; word-break: break-word; }
+.d-sub { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12px; margin-bottom: 10px; }
+.part-pill { background: var(--accent-bg); color: var(--accent); border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+.chain-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 12px; font-size: 12px; }
+.chain-arrow { color: var(--muted); }
+.cpill { display: inline-flex; align-items: center; gap: 2px; padding: 2px 10px 2px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px; }
+.cpill.cur { border-color: var(--accent); background: var(--accent-bg); font-weight: 600; }
+.cpill .ch-dot { margin-right: 2px; }
+.problems { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.problem { border-radius: 6px; padding: 8px 10px; font-size: 13px; border-left: 3px solid; word-break: break-word; }
+.problem.bad { background: #fef2f2; border-color: var(--red); color: #7f1d1d; }
+.problem.warn { background: #fffbeb; border-color: var(--yellow); color: #78350f; }
+.problem.pause { background: #fefce8; border-color: var(--yellow); color: #713f12; }
+.problem .muted { color: inherit; opacity: .7; }
+@media (prefers-color-scheme: dark) {
+  .problem.bad { background: #3b1d1d; color: #fecaca; }
+  .problem.warn, .problem.pause { background: #38290a; color: #fde68a; }
+}
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 8px 0 12px; overflow-x: auto; }
+.tab { padding: 7px 12px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab-count { background: var(--border); color: var(--fg); border-radius: 8px; padding: 0 6px; font-size: 10px; margin-left: 3px; }
+.pane { display: none; }
+.pane.active { display: block; }
+.detail-panel pre.plain, .detail-panel pre.code, .detail-panel pre.md-table { margin: 6px 0; }
+.detail-panel pre.md-table { white-space: pre; word-break: normal; }
+.md { font-size: 13px; line-height: 1.6; word-break: break-word; }
+.md p { margin: 0 0 10px; }
+.md ul, .md ol { margin: 0 0 10px 22px; }
+.md .md-h { font-weight: 600; margin: 14px 0 6px; }
+.md .md-h1 { font-size: 16px; } .md .md-h2 { font-size: 15px; } .md .md-h3, .md .md-h4 { font-size: 14px; }
+.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.md a { color: var(--accent); }
+.cont-box { margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--row-hover); }
+.cont-box label { margin: 0 0 6px; color: var(--fg); font-weight: 600; font-size: 13px; }
+.cont-box textarea { width: 100%; font: inherit; font-size: 13px; resize: vertical; }
+.actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.actions-row button.primary, .actions-row button.danger { margin-top: 0; }
+button.ghost-danger { padding: 8px 16px; border: 1px solid var(--red); background: transparent; color: var(--red); border-radius: 6px; cursor: pointer; font-size: 13px; }
+details.tech { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 8px; }
+details.tech summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+details.tech .field { margin-top: 6px; }
+details.tech .field .v { word-break: break-all; font-family: monospace; font-size: 12px; }
+</style>
 </head>
 <body>
 <header>
@@ -192,7 +265,7 @@ textarea { background: var(--input-bg); color: var(--fg); border: 1px solid var(
     <button data-tab="settings">Агенты</button>
   </nav>
   <span style="flex:1"></span>
-  <span id="conn" style="font-size:11px;color:var(--green)">●</span>
+  <span id="conn" role="button" tabindex="0" title="Состояние живого обновления. Клик — переподключиться" onclick="reconnectNow()" style="font-size:11px;color:var(--muted);cursor:pointer">◌ подключение…</span>
 </header>
 
 <main id="main"></main>
@@ -206,25 +279,8 @@ textarea { background: var(--input-bg); color: var(--fg); border: 1px solid var(
 <script>
 const API = '';
 
-// xterm.js initialization
-let terminalInstance = null;
-
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return document.querySelectorAll(sel); }
-
-function openTerminal(containerId, content) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  if (terminalInstance) {
-    terminalInstance.dispose();
-  }
-
-  terminalInstance = new Terminal();
-  terminalInstance.open(container);
-  terminalInstance.write(content);
-  terminalInstance.scrollToBottom();
-}
 
 async function get(url, opts) {
   opts = opts || {};
@@ -237,25 +293,44 @@ async function get(url, opts) {
   return r.json();
 }
 
+// Возвращает JSON даже для 4xx/5xx: сервер кладёт текст ошибки в { error }.
 async function post(url, body) {
   const r = await fetch(API + url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
   });
   return r.json();
 }
 
-function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Экранирует и кавычки тоже: значения попадают в атрибуты (title, data-*).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+const WARNING_TEXT = {
+  no_changes: 'агент не внёс изменений, хотя проверка прошла',
+  not_autocommitted: 'остались незакоммиченные изменения, авто-коммит обёртки не сработал',
+  stale_running: 'давно нет вывода — задача могла зависнуть',
+};
+
+const OUTCOME_TEXT = {
+  permission_rejected: 'Агент попытался выполнить запрещённое действие',
+  validation_error: 'Агент вызвал инструмент с некорректными аргументами',
+  abandoned: 'Агент остановился, не доведя шаг до конца',
+  error: 'Ошибка на стороне раннера (сеть, API или сбой процесса)',
+};
+
+const INTEGRATION_TEXT = {
+  accepted: 'принято в основную ветку',
+  discarded: 'отброшено',
+  empty: 'изменений не было — ветка удалена',
+};
 
 function statusBadge(s, healthWarnings) {
   let cls = 'status ' + esc(s);
   let title = '';
   if (healthWarnings && healthWarnings.length > 0) {
     cls += ' warning';
-    const msgs = healthWarnings.map(function(w) {
-      if (w === 'no_changes') return 'агент не внёс изменений, хотя проверка прошла';
-      if (w === 'not_autocommitted') return 'остались незакоммиченные изменения, авто-коммит обёртки не сработал';
-      return w;
-    });
+    const msgs = healthWarnings.map(function(w) { return WARNING_TEXT[w] || w; });
     title = ' title="⚠ ' + esc(msgs.join('; ')) + '"';
   }
   return '<span class="' + cls + '"' + title + '>' + esc(s) + '</span>';
@@ -280,266 +355,428 @@ function fmtCost(j) {
   return '$' + j.cost.toFixed(4);
 }
 
+function pct(n, total) {
+  return total > 0 ? (100 * n / total).toFixed(0) + '%' : '---';
+}
+
+// ===================================================================== STATUS / ЦЕПОЧКИ
+
+const PAUSE_HINT = 'Агент исчерпал лимит шагов и остановился. Это не ошибка — сессию можно продолжить.';
+
+// Что показываем вместо «сырого» status. Задача, упёршаяся в лимит шагов,
+// формально failed, но по сути — пауза: красная «ошибка» сбивала с толку.
+function displayStatus(j, ch) {
+  if (j.status === 'failed' && j.stopReason === 'max_steps') {
+    if (ch && ch.nextId) {
+      return { key: 'continued', label: 'продолжена →',
+        title: 'Лимит шагов исчерпан — сессию продолжила следующая задача (' + (ch.index + 1) + '/' + ch.total + ')' };
+    }
+    return { key: 'paused', label: 'пауза', title: PAUSE_HINT };
+  }
+  return { key: j.status, label: j.status, title: '' };
+}
+
+function jobBadge(j, ch) {
+  const ds = displayStatus(j, ch);
+  if (ds.key === 'paused' || ds.key === 'continued') {
+    return '<span class="status ' + ds.key + '" title="' + esc(ds.title) + '">' + ds.label + '</span>';
+  }
+  return statusBadge(j.status, j.healthWarnings);
+}
+
+const byCreated = (a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || String(a.id).localeCompare(String(b.id));
+
+// Ключ сессии: все задачи, продолжающие одну сессию агента (agent send, heal),
+// получают один sessionId. Для задач без sessionId идём по continuesJob к корню.
+function chainKeyOf(j, byId) {
+  if (j.sessionId) return 's:' + j.sessionId;
+  let cur = j, guard = 0;
+  while (cur.continuesJob && byId.has(cur.continuesJob) && guard++ < 50) cur = byId.get(cur.continuesJob);
+  return cur.sessionId ? 's:' + cur.sessionId : 'j:' + cur.id;
+}
+
+// jobId -> { key, index (с 1), total, prevId, nextId, members }
+function buildChains(jobs) {
+  const byId = new Map(jobs.map(j => [j.id, j]));
+  const groups = new Map();
+  for (const j of jobs) {
+    const k = chainKeyOf(j, byId);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(j);
+  }
+  const info = new Map();
+  for (const [key, members] of groups) {
+    members.sort(byCreated);
+    members.forEach((m, i) => info.set(m.id, {
+      key, index: i + 1, total: members.length,
+      prevId: i > 0 ? members[i - 1].id : null,
+      nextId: i < members.length - 1 ? members[i + 1].id : null,
+      members,
+    }));
+  }
+  return info;
+}
+
 // ===================================================================== JOBS
 
 let jobsCache = [];
+let jobsLoaded = false;
+let chainsMemo = new Map();
 let sortField = 'createdAt';
 let sortDir = -1;  // -1 = по убыванию (новые сверху), 1 = по возрастанию
-let eventSource = null;
-let ws = null;
-let wsReconnectTimer = null;
 let pageSize = 50;
 let currentOffset = 0;
-let totalJobs = 0;
+let activeTab = 'jobs';
+const filters = { status: '', model: '', search: '' };
 
-function setupWebSocket() {
+// ---- живое соединение (WebSocket с переподключением)
+
+let ws = null;
+let wsRetry = 0;
+let wsTimer = null;
+let pendingOpen = null; // id только что созданной задачи — откроем карточку, когда она придёт по сокету
+
+function setConn(state, sec) {
+  const el = $('#conn');
+  if (!el) return;
+  if (state === 'online') { el.style.color = 'var(--green)'; el.textContent = '● онлайн'; }
+  else if (state === 'connecting') { el.style.color = 'var(--yellow)'; el.textContent = '◌ подключение…'; }
+  else { el.style.color = 'var(--red)'; el.textContent = '○ нет связи' + (sec ? ' · повтор через ' + sec + ' с' : ''); }
+}
+
+function connectLive() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+  clearTimeout(wsTimer);
+  setConn('connecting');
+  let sock;
   try {
-    ws = new WebSocket('ws://' + location.host);
-
-    ws.onopen = () => {
-      $('#conn').style.color = 'var(--green)';
-      $('#conn').textContent = '● WS';
-      console.log('WebSocket connected');
-      // Initial data will come as first message from server
-    };
-
-    ws.onmessage = (e) => {
-      try {
-        const updates = JSON.parse(e.data);
-        if (!Array.isArray(updates)) return;
-
-        for (const msg of updates) {
-          if (msg.type === 'job_updated' && msg.job) {
-            const idx = jobsCache.findIndex(j => j.id === msg.job.id);
-            if (idx >= 0) {
-              jobsCache[idx] = { ...jobsCache[idx], ...msg.job };
-            } else {
-              jobsCache.push(msg.job);
-            }
-          } else if (msg.type === 'job_deleted' && msg.jobId) {
-            jobsCache = jobsCache.filter(j => j.id !== msg.jobId);
-          }
-        }
-        totalJobs = jobsCache.length;
-        renderJobs();
-      } catch (err) {
-        console.error('WebSocket message parse error:', err);
-      }
-    };
-
-    ws.onerror = () => {
-      console.log('WebSocket failed, falling back to SSE');
-      ws = null;
-      setupFallbackSSE();
-    };
-
-    ws.onclose = () => {
-      ws = null;
-      $('#conn').style.color = 'var(--muted)';
-      $('#conn').textContent = '○ WS disconnected';
-      // Try to reconnect after a delay, unless we already switched to SSE
-      wsReconnectTimer = setTimeout(() => {
-        if (!ws && !eventSource) {
-          const tab = $('nav button.active')?.dataset?.tab;
-          if (tab === 'jobs') {
-            setupWebSocket();
-          }
-        }
-      }, 3000);
-    };
+    sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   } catch (e) {
-    console.log('WebSocket not supported, falling back to SSE');
-    setupFallbackSSE();
+    scheduleReconnect();
+    return;
+  }
+  ws = sock;
+  let first = true;
+  sock.onopen = () => { wsRetry = 0; setConn('online'); };
+  sock.onmessage = (e) => {
+    try {
+      applyLiveMessage(JSON.parse(e.data), first);
+      first = false;
+    } catch (err) {
+      console.error('WebSocket message error:', err);
+    }
+  };
+  sock.onclose = () => {
+    if (ws !== sock) return; // это уже заменённый сокет
+    ws = null;
+    scheduleReconnect();
+  };
+  sock.onerror = () => { /* следом придёт onclose — переподключимся там */ };
+}
+
+// Переподключение с нарастающей паузой (1, 2, 4 … 15 с) — независимо от вкладки:
+// кэш задач живёт между вкладками, поэтому обновляется всегда.
+function scheduleReconnect() {
+  const delay = Math.min(1000 * Math.pow(2, wsRetry), 15000);
+  wsRetry++;
+  setConn('offline', Math.round(delay / 1000));
+  clearTimeout(wsTimer);
+  wsTimer = setTimeout(connectLive, delay);
+  // без сокета хотя бы покажем последние задачи по REST
+  if (!jobsLoaded) fallbackLoad();
+}
+
+async function fallbackLoad() {
+  try {
+    const data = await get('/api/jobs?limit=200');
+    if (jobsLoaded) return; // сокет успел раньше — его данные свежее
+    setJobs(data.jobs || []);
+    renderJobs();
+  } catch (e) { /* сервер недоступен — индикатор уже красный */ }
+}
+
+// Единая точка записи кэша: цепочки пересчитываем сразу, а не при рендере —
+// карточка задачи читает их и тогда, когда открыта другая вкладка.
+function setJobs(list) {
+  jobsCache = list;
+  jobsLoaded = true;
+  chainsMemo = buildChains(jobsCache);
+}
+
+function reconnectNow() {
+  clearTimeout(wsTimer);
+  if (ws) { const old = ws; ws = null; old.onclose = null; try { old.close(); } catch (e) {} }
+  wsRetry = 0;
+  connectLive();
+}
+
+// Первое сообщение после подключения — полный снимок: по нему вычищаем из кэша
+// задачи, удалённые за время обрыва (раньше они оставались «призраками»).
+function applyLiveMessage(updates, first) {
+  if (!Array.isArray(updates)) return;
+  const byId = new Map(first ? [] : jobsCache.map(j => [j.id, j]));
+  for (const msg of updates) {
+    if (msg.type === 'job_updated' && msg.job) byId.set(msg.job.id, msg.job);
+    else if (msg.type === 'job_deleted' && msg.jobId) byId.delete(msg.jobId);
+  }
+  setJobs([...byId.values()]);
+  renderJobs();
+  afterJobsChanged();
+}
+
+function afterJobsChanged() {
+  if (pendingOpen && jobsCache.some(j => j.id === pendingOpen)) {
+    const id = pendingOpen; pendingOpen = null;
+    openDetail(id);
+    return;
+  }
+  if (!openJobId) return;
+  // карточка открыта: перечитываем её, если у задачи сменился статус или в сессию добавилась часть
+  const j = jobsCache.find(x => x.id === openJobId);
+  const ch = chainsMemo.get(openJobId);
+  const sig = j ? [j.status, j.stopReason, j.finishedAt, j.verifyStatus, j.integration, ch ? ch.total : 0].join('|') : 'gone';
+  if (sig !== detailSig) refreshDetail();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  // после долгого сна вкладки сокет мог «зависнуть» молча — переподключаемся
+  if (hiddenAt && Date.now() - hiddenAt > 60000) reconnectNow(); else connectLive();
+});
+let hiddenAt = 0;
+window.addEventListener('online', reconnectNow);
+
+// ---- таблица
+
+function sortValue(j, field, ch) {
+  switch (field) {
+    case 'task': return (j.task || '').toLowerCase();
+    case 'status': return displayStatus(j, ch).key;
+    case 'model': return j.model || '';
+    case 'cost': return j.cost == null ? -1 : j.cost;
+    case 'tokens': return j.tokens ? (j.tokens.total || 0) : -1;
+    case 'duration': {
+      if (!j.startedAt) return -1;
+      const end = j.finishedAt ? Date.parse(j.finishedAt) : Date.now();
+      return end - Date.parse(j.startedAt);
+    }
+    default: return j.createdAt || '';
   }
 }
 
-function setupFallbackSSE() {
-  if (eventSource) return;
-
-  $('#conn').style.color = 'var(--yellow)';
-  $('#conn').textContent = '● SSE';
-
-  eventSource = new EventSource('/api/events');
-
-  eventSource.addEventListener('init', (e) => {
-    const jobs = JSON.parse(e.data);
-    jobsCache = jobs;
-    totalJobs = jobs.length;
-    currentOffset = 0;
-    renderJobs();
-  });
-
-  eventSource.addEventListener('job-update', (e) => {
-    const updates = JSON.parse(e.data);
-    if (Array.isArray(updates)) {
-      updates.forEach(update => {
-        if (update.status === 'deleted') {
-          jobsCache = jobsCache.filter(j => j.id !== update.id);
-        } else {
-          const index = jobsCache.findIndex(j => j.id === update.id);
-          if (index >= 0) {
-            jobsCache[index] = { ...jobsCache[index], ...update };
-          } else {
-            jobsCache.push(update);
-          }
-        }
-      });
-    } else {
-      const update = updates;
-      const index = jobsCache.findIndex(j => j.id === update.id);
-      if (index >= 0) {
-        jobsCache[index] = { ...jobsCache[index], ...update };
-      } else {
-        jobsCache.push(update);
-      }
-    }
-    totalJobs = jobsCache.length;
-    renderJobs();
-  });
-
-  eventSource.onerror = (error) => {
-    console.error('SSE connection error:', error);
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    // Try WebSocket again first, then SSE as fallback after delay
-    setTimeout(() => {
-      const tab = $('nav button.active')?.dataset?.tab;
-      if (tab === 'jobs') {
-        loadJobs();
-      }
-    }, 3000);
-  };
+function cmpVals(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
 }
 
-async function loadJobs() {
-  // Already connected via WebSocket or SSE
-  if (ws || eventSource) return;
+// Строки одной сессии идут подряд (1, 2, 3 сверху вниз), а сами сессии
+// сортируются по своей последней части — так «свежая» сессия остаётся наверху.
+function orderRows(list) {
+  const groups = new Map();
+  for (const j of list) {
+    const k = chainsMemo.get(j.id).key;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(j);
+  }
+  const arr = [...groups.values()];
+  for (const g of arr) g.sort(byCreated);
+  const rep = (g) => g[g.length - 1];
+  arr.sort((ga, gb) => {
+    const a = rep(ga), b = rep(gb);
+    return sortDir * cmpVals(sortValue(a, sortField, chainsMemo.get(a.id)), sortValue(b, sortField, chainsMemo.get(b.id)));
+  });
+  return arr.flat();
+}
 
-  // Initial fetch: get first page for immediate display
-  const data = await get('/api/jobs?limit=' + pageSize + '&offset=0');
-  jobsCache = data.jobs || data;
-  totalJobs = data.total || jobsCache.length;
+const SORT_COLS = [
+  ['task', 'Задача'], ['status', 'Статус'], ['model', 'Модель'], [null, 'Проверка'],
+  ['createdAt', 'Создана'], ['duration', 'Длит.'], ['cost', 'Стоимость'], ['tokens', 'Токены'],
+];
+
+function ensureJobsSkeleton() {
+  const main = $('#main');
+  if (main.querySelector('#jobs-root')) return;
+  // Каркас строится один раз: фильтры живут в DOM постоянно, поэтому ввод в
+  // поиске не теряет фокус при каждом обновлении (раньше фильтры пересоздавались).
+  main.innerHTML =
+    '<div id="jobs-root">' +
+    '<div class="filters">' +
+      '<select id="filter-status" aria-label="Статус"><option value="">все статусы</option>' +
+        ['completed','running','paused','failed','killed','pending'].map(s => '<option value="' + s + '">' + s + '</option>').join('') +
+      '</select>' +
+      '<select id="filter-model" aria-label="Модель"><option value="">все модели</option></select>' +
+      '<input id="filter-search" type="search" placeholder="поиск по задаче или ID…" autocomplete="off" aria-label="Поиск">' +
+      '<span id="jobs-count" class="jobs-count"></span>' +
+    '</div>' +
+    '<div id="jobs-table"></div>' +
+    '<div class="pagination" id="jobs-pagination"></div>' +
+    '</div>';
+
+  // фильтры запоминаем в объекте: при переходе на другую вкладку и обратно каркас
+  // пересоздаётся, а выбранное должно остаться
+  const reset = () => { currentOffset = 0; renderJobs(); };
+  $('#filter-status').addEventListener('change', (e) => { filters.status = e.target.value; reset(); });
+  $('#filter-model').addEventListener('change', (e) => { filters.model = e.target.value; reset(); });
+  $('#filter-search').addEventListener('input', (e) => { filters.search = e.target.value; reset(); });
+
+  const table = $('#jobs-table');
+  table.addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-sort]');
+    if (th) { setSort(th.dataset.sort); return; }
+    if (e.target.closest('[data-act="reset"]')) { resetFilters(); return; }
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) openDetail(tr.dataset.id);
+  });
+  table.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) { e.preventDefault(); openDetail(tr.dataset.id); }
+  });
+  $('#jobs-pagination').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b || b.disabled) return;
+    if (b.dataset.act === 'prev') prevPage(); else if (b.dataset.act === 'next') nextPage();
+  });
+}
+
+function setSort(field) {
+  if (sortField === field) sortDir = -sortDir;
+  else { sortField = field; sortDir = (field === 'task' || field === 'model' || field === 'status') ? 1 : -1; }
   currentOffset = 0;
   renderJobs();
+}
 
-  // Try WebSocket first, fall back to SSE
-  setupWebSocket();
+function resetFilters() {
+  filters.status = ''; filters.model = ''; filters.search = '';
+  currentOffset = 0;
+  $('#filter-model').value = '';
+  renderJobs();
+}
+
+function matchesStatus(j, f) {
+  const paused = j.status === 'failed' && j.stopReason === 'max_steps';
+  if (f === 'paused') return paused;
+  if (f === 'failed') return j.status === 'failed' && !paused;
+  return j.status === f;
 }
 
 function renderJobs() {
-  const fStatus = $('#filter-status')?.value || '';
-  const fModel = $('#filter-model')?.value || '';
-  const fSearch = ($('#filter-search')?.value || '').toLowerCase();
+  if (activeTab !== 'jobs') return; // WS-обновления не должны рисовать таблицу поверх других вкладок
+  ensureJobsSkeleton();
 
-  let list = jobsCache.filter(j => {
-    if (fStatus && j.status !== fStatus) return false;
+  // значения фильтров из памяти → в элементы (нужно после пересоздания каркаса).
+  // Поле поиска трогаем только при расхождении, чтобы не сбить курсор при вводе.
+  if ($('#filter-status').value !== filters.status) $('#filter-status').value = filters.status;
+  if ($('#filter-search').value !== filters.search) $('#filter-search').value = filters.search;
+
+  // список моделей в фильтре обновляем только если он изменился
+  const models = [...new Set(jobsCache.map(j => j.model))].sort();
+  const sig = models.join('|');
+  const modelSel = $('#filter-model');
+  if (modelSel.dataset.sig !== sig) {
+    modelSel.dataset.sig = sig;
+    modelSel.innerHTML = '<option value="">все модели</option>' +
+      models.map(m => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
+    if (models.indexOf(filters.model) < 0) filters.model = '';
+    modelSel.value = filters.model;
+  }
+
+  const fStatus = filters.status;
+  const fModel = filters.model;
+  const fSearch = filters.search.trim().toLowerCase();
+
+  const filtered = jobsCache.filter(j => {
+    if (fStatus && !matchesStatus(j, fStatus)) return false;
     if (fModel && j.model !== fModel) return false;
-    if (fSearch && !(j.id + j.task).toLowerCase().includes(fSearch)) return false;
+    if (fSearch && !((j.id || '') + ' ' + (j.task || '') + ' ' + (j.promptPreview || '')).toLowerCase().includes(fSearch)) return false;
     return true;
   });
+  const list = orderRows(filtered);
 
-  // сортировка
-  list.sort((a, b) => {
-    const va = (a[sortField] || ''), vb = (b[sortField] || '');
-    return sortDir * va.localeCompare(vb);
-  });
-
-  // pagination slice
-  const filteredTotal = list.length;
-  if (currentOffset >= filteredTotal && filteredTotal > 0) {
-    currentOffset = Math.max(0, filteredTotal - pageSize);
+  if (currentOffset >= list.length && list.length > 0) {
+    currentOffset = Math.max(0, Math.floor((list.length - 1) / pageSize) * pageSize);
   }
   const pageItems = list.slice(currentOffset, currentOffset + pageSize);
 
-  const models = [...new Set(jobsCache.map(j => j.model))].sort();
+  $('#jobs-count').textContent = list.length + ' из ' + jobsCache.length;
 
-  const sortArrow = (field) => field === sortField ? (sortDir === -1 ? ' ▼' : ' ▲') : '';
-
-  // Build filters HTML
-  let filtersHtml = '<div class="filters">';
-  filtersHtml += '<select id="filter-status" onchange="renderJobs()"><option value="">все статусы</option>';
-  for (const s of ['completed','failed','running','killed','pending'])
-    filtersHtml += '<option value="' + s + '"' + (fStatus === s ? ' selected' : '') + '>' + s + '</option>';
-  filtersHtml += '</select>';
-  filtersHtml += '<select id="filter-model" onchange="renderJobs()"><option value="">все модели</option>';
-  for (const m of models)
-    filtersHtml += '<option value="' + m + '"' + (fModel === m ? ' selected' : '') + '>' + m + '</option>';
-  filtersHtml += '</select>';
-  filtersHtml += '<input id="filter-search" placeholder="поиск по задаче..." value="' + esc(fSearch) + '" oninput="renderJobs()">';
-  filtersHtml += '<span style="margin-left:auto;color:var(--muted);font-size:12px">' + list.length + ' из ' + jobsCache.length + '</span>';
-  filtersHtml += '</div>';
-
-  // Create table HTML
-  let tableHtml = '<table><thead><tr>';
-  tableHtml += '<th>ID</th><th>Задача</th><th>Статус</th><th>Модель</th><th>variant</th><th>Проверка</th>';
-  tableHtml += '<th style="cursor:pointer" onclick="sortField=\'createdAt\';sortDir=-sortDir;renderJobs()">Создана' + sortArrow('createdAt') + '</th>';
-  tableHtml += '<th>Длит.</th><th>Стоимость</th><th>Токены</th>';
-  tableHtml += '</tr></thead><tbody id="jobs-tbody">';
-
-  // Create rows for each job on current page
-  for (const j of pageItems) {
-    const shortId = j.id.length > 42 ? j.id.slice(0, 39) + '...' : j.id;
-    const created = j.createdAt ? j.createdAt.slice(0,16).replace('T',' ') : '---';
-    tableHtml += '<tr onclick="openDetail(\'' + j.id + '\')" title="' + esc(j.id) + '\\nсоздана: ' + esc(j.createdAt || '') + '\\nзапущена: ' + esc(j.startedAt || '') + '\\nзавершена: ' + esc(j.finishedAt || '') + '">';
-    tableHtml += '<td style="font-family:monospace;font-size:11px">' + esc(shortId) + '</td>';
-    tableHtml += '<td>' + esc(j.task || '') + '</td>';
-    tableHtml += '<td>' + statusBadge(j.status, j.healthWarnings) + diagBadge(j.diagnosisOutcome, j.diagnosisError) + '</td>';
-    tableHtml += '<td>' + esc(j.model) + '</td>';
-    tableHtml += '<td style="color:var(--muted)">' + esc(j.variant || '---') + '</td>';
-    tableHtml += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : (j.verifyCmd ? '---' : 'не требуется')) + '</td>';
-    tableHtml += '<td style="font-size:11px;color:var(--muted)">' + esc(created) + '</td>';
-    tableHtml += '<td style="color:var(--muted)">' + esc(j.duration) + '</td>';
-    tableHtml += '<td>' + fmtCost(j) + '</td>';
-    tableHtml += '<td>' + (j.tokens ? fmtNum(j.tokens.total) : '---') + '</td>';
-    tableHtml += '</tr>';
+  const holder = $('#jobs-table');
+  if (!jobsLoaded) {
+    holder.innerHTML = '<div class="empty">Загрузка…</div>';
+  } else if (jobsCache.length === 0) {
+    holder.innerHTML = '<div class="empty">Задач пока нет.<br><span class="muted">Запусти первую: <code>agent delegate coding "…"</code></span></div>';
+  } else if (list.length === 0) {
+    holder.innerHTML = '<div class="empty">Ничего не найдено по фильтрам. <button data-act="reset">Сбросить</button></div>';
+  } else {
+    holder.innerHTML = tableHtml(pageItems);
   }
 
-  tableHtml += '</tbody></table>';
-
-  // pagination controls
-  const totalPages = Math.ceil(filteredTotal / pageSize) || 1;
+  const totalPages = Math.ceil(list.length / pageSize) || 1;
   const currentPage = Math.floor(currentOffset / pageSize) + 1;
-  const prevDisabled = currentOffset <= 0;
-  const nextDisabled = currentOffset + pageSize >= filteredTotal;
-  let pagHtml = '<div class="pagination">';
-  pagHtml += '<button onclick="prevPage()"' + (prevDisabled ? ' disabled' : '') + '>← новее</button>';
-  pagHtml += '<span>' + currentPage + ' из ' + totalPages + '</span>';
-  pagHtml += '<button onclick="nextPage()"' + (nextDisabled ? ' disabled' : '') + '>старее →</button>';
-  pagHtml += '</div>';
+  $('#jobs-pagination').innerHTML = totalPages > 1
+    ? '<button data-act="prev"' + (currentOffset <= 0 ? ' disabled' : '') + '>← новее</button>' +
+      '<span>' + currentPage + ' из ' + totalPages + '</span>' +
+      '<button data-act="next"' + (currentOffset + pageSize >= list.length ? ' disabled' : '') + '>старее →</button>'
+    : '';
+}
 
-  // Incremental update
-  const main = $('#main');
-  const currentFilters = main.querySelector('.filters');
-  const currentTable = main.querySelector('table');
-  const currentPagination = main.querySelector('.pagination');
+function tableHtml(items) {
+  const arrow = (f) => f === sortField ? (sortDir === -1 ? ' ▼' : ' ▲') : '';
+  let h = '<table><thead><tr><th class="chain"></th>';
+  for (const [field, label] of SORT_COLS) {
+    h += field
+      ? '<th class="sortable" data-sort="' + field + '">' + label + arrow(field) + '</th>'
+      : '<th>' + label + '</th>';
+  }
+  h += '</tr></thead><tbody>';
 
-  if (currentFilters) {
-    if (currentFilters.innerHTML !== filtersHtml) {
-      currentFilters.outerHTML = filtersHtml;
-    }
-  } else {
-    main.insertAdjacentHTML('afterbegin', filtersHtml);
+  items.forEach((j, i) => {
+    const ch = chainsMemo.get(j.id);
+    // соседи по сессии среди видимых строк — от них зависит, рисовать ли линию-связку
+    const hasUp = ch.total > 1 && i > 0 && chainsMemo.get(items[i - 1].id).key === ch.key;
+    const hasDown = ch.total > 1 && i < items.length - 1 && chainsMemo.get(items[i + 1].id).key === ch.key;
+    h += rowHtml(j, ch, hasUp, hasDown);
+  });
+  return h + '</tbody></table>';
+}
+
+function rowHtml(j, ch, hasUp, hasDown) {
+  const ds = displayStatus(j, ch);
+  const created = j.createdAt ? j.createdAt.slice(0, 16).replace('T', ' ') : '---';
+  const cls = ['job-row'];
+  if (ch.total > 1) cls.push('in-chain');
+  if (hasUp) cls.push('ch-up');
+  if (hasDown) cls.push('ch-down');
+  if (j.id === openJobId) cls.push('selected');
+
+  const tip = j.id + '\nсоздана: ' + (j.createdAt || '') + '\nзапущена: ' + (j.startedAt || '') + '\nзавершена: ' + (j.finishedAt || '');
+
+  let chainCell = '<td class="chain"></td>';
+  if (ch.total > 1) {
+    chainCell = '<td class="chain" title="Сессия агента: часть ' + ch.index + ' из ' + ch.total + '">' +
+      '<span class="ch-dot ' + esc(ds.key) + '"></span><span class="ch-n">' + ch.index + '/' + ch.total + '</span></td>';
   }
 
-  if (currentTable) {
-    currentTable.outerHTML = tableHtml;
+  // продолжение показываем по своему сообщению («допиши тесты»), а не повтором названия задачи
+  let taskCell;
+  if (hasUp) {
+    taskCell = '<span class="ch-arrow">↳</span> <span class="muted">продолжение:</span> ' + esc(j.promptPreview || j.task || '');
   } else {
-    main.insertAdjacentHTML('beforeend', tableHtml);
+    taskCell = esc(j.task || '');
   }
 
-  // Update or insert pagination after the table
-  if (currentPagination) {
-    currentPagination.outerHTML = pagHtml;
-  } else {
-    const tbl = main.querySelector('table');
-    if (tbl) {
-      tbl.insertAdjacentHTML('afterend', pagHtml);
-    } else {
-      main.insertAdjacentHTML('beforeend', pagHtml);
-    }
-  }
+  let h = '<tr class="' + cls.join(' ') + '" data-id="' + esc(j.id) + '" tabindex="0" title="' + esc(tip) + '">';
+  h += chainCell;
+  h += '<td class="task">' + taskCell + '</td>';
+  h += '<td>' + jobBadge(j, ch) + diagBadge(j.diagnosisOutcome, j.diagnosisError) + '</td>';
+  h += '<td>' + esc(j.model) + (j.variant ? ' <span class="muted">· ' + esc(j.variant) + '</span>' : '') + '</td>';
+  h += '<td>' + (j.verifyStatus ? statusBadge(j.verifyStatus) : (j.verifyCmd ? '---' : '<span class="muted">не требуется</span>')) + '</td>';
+  h += '<td class="muted small">' + esc(created) + '</td>';
+  const dur = (j.status === 'running' && j.startedAt) ? fmtDuration(j.startedAt, new Date().toISOString()) : j.duration;
+  h += '<td class="muted">' + esc(dur) + '</td>';
+  h += '<td>' + fmtCost(j) + '</td>';
+  h += '<td>' + (j.tokens ? fmtNum(j.tokens.total) : '---') + '</td>';
+  return h + '</tr>';
 }
 
 function prevPage() {
@@ -553,103 +790,336 @@ function nextPage() {
   renderJobs();
 }
 
+function showJobs() {
+  renderJobs();
+  connectLive();
+}
+
+// ===================================================================== MARKDOWN (минимальный, безопасный)
+
+function mdInline(s) {
+  s = esc(s);
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)"'&]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return s;
+}
+
+function mdBlock(text) {
+  const out = [];
+  let list = null, para = [], tbl = [];
+  const flushPara = () => { if (para.length) { out.push('<p>' + para.map(mdInline).join('<br>') + '</p>'); para = []; } };
+  const flushList = () => {
+    if (list) { out.push('<' + list.tag + '>' + list.items.map(i => '<li>' + mdInline(i) + '</li>').join('') + '</' + list.tag + '>'); list = null; }
+  };
+  const flushTbl = () => { if (tbl.length) { out.push('<pre class="md-table">' + esc(tbl.join('\n')) + '</pre>'); tbl = []; } };
+  const flushAll = () => { flushPara(); flushList(); flushTbl(); };
+
+  for (const line of text.split(/\r?\n/)) {
+    let m;
+    if (!line.trim()) { flushAll(); continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); tbl.push(line); continue; }
+    flushTbl();
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flushAll(); out.push('<div class="md-h md-h' + Math.min(m[1].length, 4) + '">' + mdInline(m[2]) + '</div>'); continue; }
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+    if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+      flushPara();
+      if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; }
+      list.items.push(m[1]); continue;
+    }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+      flushPara();
+      if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; }
+      list.items.push(m[1]); continue;
+    }
+    flushList();
+    para.push(line);
+  }
+  flushAll();
+  return out.join('');
+}
+
+function md(src) {
+  // чётные куски — обычный текст, нечётные — блоки кода между ```
+  return String(src).split('```').map((part, i) => {
+    if (i % 2 === 0) return mdBlock(part);
+    const code = part.replace(/^[\w+-]*\r?\n/, '');
+    return '<pre class="code">' + esc(code.replace(/\n$/, '')) + '</pre>';
+  }).join('');
+}
+
 // ===================================================================== DETAIL
 
-async function openDetail(id) {
-  const d = await get('/api/jobs/' + id);
-  let h = '<button class="close" onclick="closeDetail()">✕</button>';
+let openJobId = null;
+let detailTab = 'result';   // выбранная вкладка помнится при переходе между задачами
+let detailSig = '';
+let progressLoadedFor = null;
+
+function detailField(k, v) {
+  if (v == null || v === '') return '';
+  return '<div class="field"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>';
+}
+
+function markSelectedRow() {
+  $$('#jobs-table tr.selected').forEach(tr => tr.classList.remove('selected'));
+  if (!openJobId) return;
+  $$('#jobs-table tr[data-id]').forEach(tr => { if (tr.dataset.id === openJobId) tr.classList.add('selected'); });
+}
+
+async function openDetail(id, keepState) {
+  openJobId = id;
+  const panel = $('#detail');
+  panel.classList.add('open');
+  $('#overlay').classList.add('open');
+  if (!keepState) panel.innerHTML = '<button class="close" data-act="close" aria-label="Закрыть">✕</button><div class="empty">Загрузка…</div>';
+  markSelectedRow();
+
+  let d;
+  try {
+    d = await get('/api/jobs/' + encodeURIComponent(id));
+  } catch (e) {
+    if (openJobId !== id) return;
+    detailSig = 'gone'; // иначе каждое WS-обновление снова пыталось бы перечитать удалённую задачу
+    panel.innerHTML = '<button class="close" data-act="close" aria-label="Закрыть">✕</button>' +
+      '<div class="empty err">Не удалось загрузить задачу: ' + esc(e.message) + '<br><span class="muted">Возможно, она уже удалена.</span></div>';
+    return;
+  }
+  if (openJobId !== id) return; // пока грузили, открыли другую
+  renderDetail(d, !!keepState);
+}
+
+function refreshDetail() {
+  if (openJobId) openDetail(openJobId, true);
+}
+
+function problemsHtml(d) {
+  const items = [];
+  const warn = (cls, text) => items.push('<div class="problem ' + cls + '">' + text + '</div>');
+
+  if (d.stopReason === 'max_steps') {
+    warn('pause', '<strong>Пауза: лимит шагов исчерпан.</strong> Это не сбой — агент остановился, а сессию можно продолжить.');
+  } else if (d.status === 'failed' || d.error) {
+    if (d.error) warn('bad', '<strong>Ошибка:</strong> ' + esc(String(d.error).slice(0, 400)));
+  }
+  const dg = d.diagnosis;
+  if (dg && OUTCOME_TEXT[dg.outcome] && !(dg.outcome === 'error' && d.error)) {
+    warn('bad', '<strong>' + esc(OUTCOME_TEXT[dg.outcome]) + '.</strong>' +
+      (dg.lastErrorMessage ? ' <span class="muted">' + esc(String(dg.lastErrorMessage).slice(0, 160)) + '</span>' : ''));
+  }
+  if (d.verifyStatus === 'failed') {
+    warn('bad', '<strong>Проверка не пройдена</strong>' + (d.verifyExitCode != null ? ' (код ' + esc(d.verifyExitCode) + ')' : '') + ' — подробности во вкладке «Логи».');
+  }
+  for (const w of (d.healthWarnings || [])) warn('warn', '⚠ ' + esc(WARNING_TEXT[w] || w));
+  return items.length ? '<div class="problems">' + items.join('') + '</div>' : '';
+}
+
+function chainNavHtml(ch, curId) {
+  if (!ch || ch.total < 2) return '';
+  let h = '<div class="chain-nav"><span class="muted">Сессия агента:</span> ';
+  ch.members.forEach((m, i) => {
+    const mch = chainsMemo.get(m.id);
+    const ds = displayStatus(m, mch);
+    const label = (m.promptPreview || m.task || '') + ' — ' + ds.label;
+    if (i > 0) h += '<span class="chain-arrow">→</span>';
+    h += '<button class="cpill ' + esc(ds.key) + (m.id === curId ? ' cur' : '') + '" data-open="' + esc(m.id) + '" title="' + esc(label) + '">' +
+      '<span class="ch-dot ' + esc(ds.key) + '"></span>' + (i + 1) + '</button>';
+  });
+  return h + '</div>';
+}
+
+function renderDetail(d, keep) {
+  const panel = $('#detail');
+  const prevState = keep ? {
+    top: panel.scrollTop,
+    msg: ($('#cont-msg') || {}).value || '',
+    focusId: document.activeElement && document.activeElement.id,
+  } : null;
+
+  const ch = chainsMemo.get(d.id) || null;
+  const ds = displayStatus(d, ch);
+  const isLast = !ch || !ch.nextId;
+  const running = d.status === 'running';
+  const integration = d.integration || (ch && (ch.members.find(m => m.integration) || {}).integration) || null;
+  const canIntegrate = !!d.worktree && !integration && !running && isLast;
+
+  detailSig = [d.status, d.stopReason, d.finishedAt, d.verifyStatus, d.integration, ch ? ch.total : 0].join('|');
+
+  // ---- шапка
+  const meta = [];
+  if (d.startedAt) meta.push(fmtDuration(d.startedAt, d.finishedAt || new Date().toISOString()));
+  if (d.cost != null) meta.push(fmtCost(d));
+  if (d.tokens) meta.push(fmtNum(d.tokens.total) + ' токенов');
+  const modelText = (d.model ? d.model.split('/').pop() : (d.runner || '')) + (d.variant ? ' · ' + d.variant : '');
+  if (modelText) meta.push(modelText);
+
+  let h = '<button class="close" data-act="close" aria-label="Закрыть (Esc)">✕</button>';
   h += '<h3>' + esc(d.task || d.id) + '</h3>';
+  h += '<div class="d-sub">' + jobBadge(d, ch) + diagBadge(d.diagnosis && d.diagnosis.outcome, d.diagnosis && d.diagnosis.lastErrorMessage);
+  if (ch && ch.total > 1) h += ' <span class="part-pill">часть ' + ch.index + ' из ' + ch.total + '</span>';
+  h += ' <span class="muted">' + esc(meta.join(' · ')) + '</span></div>';
+  h += chainNavHtml(ch, d.id);
+  h += problemsHtml(d);
 
-  const fields = [
-    ['ID', d.id], ['статус', d.status + (d.exitCode != null ? ' (код ' + d.exitCode + ')' : '')],
-    ['исполнитель', (d.runner || '') + (d.model ? ' / ' + d.model : '') + (d.variant ? ' (variant: ' + d.variant + ')' : '')],
-    ['директория', d.cwd], ['сессия', d.sessionId],
-    ['запущена', d.startedAt], ['длительность', fmtDuration(d.startedAt, d.finishedAt)],
-    ['стоимость', fmtCost(d)], ['токены', d.tokens ? 'всего ' + fmtNum(d.tokens.total) + ' (вход ' + fmtNum(d.tokens.input) + ', выход ' + fmtNum(d.tokens.output) + ')' : '---'],
-    ['проверка', d.verifyCmd], ['результат проверки', d.verifyCmd ? (d.verifyStatus + (d.verifyExitCode != null ? ' (код ' + d.verifyExitCode + ')' : '')) : 'не требуется'],
-    ['изменения', d.changedFiles != null ? d.changedFiles + ' файлов' + (d.diffStat ? ' (' + esc(d.diffStat) + ')' : '') : '---'],
-    ['авто-коммит', d.autoCommitted != null ? (d.autoCommitted ? 'да (обёртка)' : 'нет') : '---'],
-    ['ошибка', d.error],
-    ['диагноз', d.diagnosis ? d.diagnosis.outcome + (d.diagnosis.lastErrorMessage ? ': ' + esc(d.diagnosis.lastErrorMessage.slice(0, 120)) : '') : '---'],
-  ];
-  for (const [k, v] of fields) {
-    if (v == null || v === '') continue;
-    h += '<div class="field"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>';
+  // ---- вкладки
+  const changesCount = d.changedFiles != null ? ' <span class="tab-count">' + esc(d.changedFiles) + '</span>' : '';
+  const tabs = [['result', 'Результат'], ['prompt', 'ТЗ'], ['progress', 'Ход работы'], ['changes', 'Изменения' + changesCount], ['logs', 'Логи']];
+  if (!keep && detailTab === 'result' && running) detailTab = 'progress'; // у работающей задачи результата ещё нет
+  h += '<div class="tabs" role="tablist">' + tabs.map(([k, label]) =>
+    '<button class="tab' + (k === detailTab ? ' active' : '') + '" role="tab" data-tab="' + k + '">' + label + '</button>').join('') + '</div>';
+
+  // Результат
+  let result;
+  if (d.resultMd && d.resultMd.trim()) {
+    const cut = d.resultMd.length > 60000;
+    result = '<div class="md">' + md(cut ? d.resultMd.slice(0, 60000) : d.resultMd) + '</div>' +
+      (cut ? '<div class="muted small">…показаны первые 60 000 символов из ' + fmtNum(d.resultMd.length) + '</div>' : '');
+  } else {
+    result = '<div class="empty">' + (running ? 'Задача выполняется — результат появится после завершения. Смотри «Ход работы».' : '(результата нет)') + '</div>';
+  }
+  h += '<div class="pane' + (detailTab === 'result' ? ' active' : '') + '" data-pane="result">' + result + '</div>';
+
+  // ТЗ
+  const promptLabel = d.continuesJob
+    ? 'Сообщение для продолжения сессии' + (ch ? ' (часть ' + ch.index + ' из ' + ch.total + ')' : '')
+    : 'Что было поручено агенту';
+  h += '<div class="pane' + (detailTab === 'prompt' ? ' active' : '') + '" data-pane="prompt">' +
+    '<div class="muted small" style="margin-bottom:6px">' + promptLabel + '</div>' +
+    (d.promptMd ? '<pre class="plain">' + esc(d.promptMd) + '</pre>' : '<div class="empty">(ТЗ не сохранено)</div>') + '</div>';
+
+  // Ход работы (лог сессии подгружается при открытии вкладки)
+  h += '<div class="pane' + (detailTab === 'progress' ? ' active' : '') + '" data-pane="progress">' +
+    '<div style="display:flex;justify-content:flex-end"><button data-act="refresh-log" class="mini">↻ обновить</button></div>' +
+    '<div id="session-log"><div class="sess-empty">загрузка...</div></div></div>';
+
+  // Изменения
+  let chg = '';
+  chg += detailField('изменено файлов', d.changedFiles != null ? d.changedFiles : null);
+  if (d.diffStat) chg += '<pre class="plain">' + esc(d.diffStat) + '</pre>';
+  chg += detailField('ветка', d.branch);
+  chg += detailField('база', d.baseBranch);
+  if (d.autoCommitted != null) chg += detailField('авто-коммит', d.autoCommitted ? 'да (обёртка закоммитила за агента)' : 'нет — остались незакоммиченные изменения');
+  if (d.verifyCmd) chg += detailField('проверка', d.verifyCmd + ' → ' + (d.verifyStatus || 'не запускалась'));
+  if (d.worktree) chg += detailField('состояние ветки', integration ? INTEGRATION_TEXT[integration] || integration : 'ждёт решения');
+  if (!chg) chg = '<div class="empty">(данных об изменениях нет)</div>';
+  if (canIntegrate) {
+    chg += '<div class="actions-row">' +
+      '<button class="primary" data-act="accept">✓ Принять изменения</button>' +
+      '<button data-act="discard" class="ghost-danger">Отбросить ветку</button></div>' +
+      '<div class="muted small">«Принять» делает squash-мердж ветки в текущую ветку основного репозитория и убирает worktree.</div>';
+  } else if (d.worktree && !integration && !running && !isLast) {
+    chg += '<div class="muted small" style="margin-top:8px">Принять или отбросить ветку можно в последней части сессии.</div>';
+  }
+  h += '<div class="pane' + (detailTab === 'changes' ? ' active' : '') + '" data-pane="changes">' + chg + '</div>';
+
+  // Логи
+  h += '<div class="pane' + (detailTab === 'logs' ? ' active' : '') + '" data-pane="logs">' +
+    '<div class="sess-section-label">stderr (последние 100 строк)</div>' +
+    (d.stderrTail && d.stderrTail.trim() ? '<pre class="plain">' + esc(d.stderrTail) + '</pre>' : '<div class="muted small">пусто</div>') +
+    '<div class="sess-section-label">проверка (verify.log)</div>' +
+    (d.verifyLogTail && d.verifyLogTail.trim() ? '<pre class="plain">' + esc(d.verifyLogTail) + '</pre>' : '<div class="muted small">пусто</div>') +
+    '</div>';
+
+  // ---- продолжить сессию
+  if (d.sessionId) {
+    if (running) {
+      h += '<div class="cont-box"><div class="muted small">Задача выполняется. Дописать агенту можно после завершения — или останови её кнопкой ниже.</div></div>';
+    } else if (isLast) {
+      h += '<div class="cont-box"><label for="cont-msg">Продолжить сессию' + (d.stopReason === 'max_steps' ? ' <span class="muted">— агент остановился по лимиту шагов</span>' : '') + '</label>' +
+        '<textarea id="cont-msg" rows="3" placeholder="Что дописать или уточнить агенту… (Ctrl+Enter — отправить)"></textarea>' +
+        '<div class="actions-row"><button class="primary" data-act="send">Продолжить</button>' +
+        '<span class="muted small">Создаст новую задачу в этой же сессии — агент помнит весь контекст.</span></div></div>';
+    } else {
+      h += '<div class="cont-box"><div class="muted small">Сессию уже продолжила следующая задача — ' +
+        '<a href="#" data-open="' + esc(ch.nextId) + '">перейти к части ' + (ch.index + 1) + '</a>.</div></div>';
+    }
   }
 
-  if (d.healthWarnings && d.healthWarnings.length > 0) {
-    var _warntxt = d.healthWarnings.map(function(w) {
-      if (w === 'no_changes') return '⚠ агент не внёс изменений, хотя проверка прошла';
-      if (w === 'not_autocommitted') return '⚠ остались незакоммиченные изменения, авто-коммит обёртки не сработал';
-      return '⚠ ' + w;
-    }).join('\n');
-    h += '<div class="field"><div class="k">Предупреждения</div><div class="v" style="color:var(--yellow);white-space:pre-wrap">' + esc(_warntxt) + '</div></div>';
-  }
-
-  if (d.resultMd || d.verifyLogTail || d.stderrTail) {
-    h += '<h4 style="margin-top:16px">Лог задачи (терминал)</h4>';
-    h += '<div id="terminal"></div>';
-  }
-
-  // Session log block
-  h += '<h4 style="margin-top:16px">Сессия агента</h4>';
-  h += '<div id="session-log"><div class="sess-empty">загрузка...</div></div>';
-
-  // Action buttons: kill / delete
-  h += '<div style="margin-top:16px;display:flex;gap:8px">';
-  if (d.status === 'running') {
-    h += '<button class="danger" onclick="killJob(\'' + esc(d.id) + '\')">🧹 Убить задачу</button>';
-  }
-  if (d.status !== 'running') {
-    h += '<button class="danger" onclick="deleteJob(\'' + esc(d.id) + '\')">🗑 Удалить задачу</button>';
-  }
+  // ---- действия
+  h += '<div class="actions-row">';
+  if (running) h += '<button class="danger" data-act="kill">🧹 Остановить задачу</button>';
+  else h += '<button class="danger" data-act="delete">🗑 Удалить задачу</button>';
   h += '</div>';
 
-  $('#detail').innerHTML = h;
+  // ---- технические детали
+  let tech = '';
+  tech += detailField('ID', d.id);
+  tech += detailField('сессия', d.sessionId);
+  tech += detailField('раннер', d.runner);
+  tech += detailField('директория', d.cwd);
+  tech += detailField('код выхода', d.exitCode);
+  tech += detailField('код проверки', d.verifyExitCode);
+  tech += detailField('pid', d.pid);
+  tech += detailField('создана', d.createdAt);
+  tech += detailField('запущена', d.startedAt);
+  tech += detailField('завершена', d.finishedAt);
+  tech += detailField('продолжает задачу', d.continuesJob);
+  tech += detailField('базовый коммит', d.baseCommit || d.startCommit);
+  tech += detailField('принятый коммит', d.acceptedCommit);
+  tech += detailField('попыток починки проверки', d.verifyRetryCount || null);
+  h += '<details class="tech"><summary>Технические детали</summary>' + tech + '</details>';
 
-  if (d.resultMd || d.verifyLogTail || d.stderrTail) {
-    let logContent = '';
-    if (d.resultMd) {
-      logContent += '=== result.md ===\r\n' + d.resultMd.slice(0, 8000);
-      if (d.resultMd.length > 8000) {
-        logContent += '\r\n... (обрезано, всего ' + d.resultMd.length + ' симв.)\r\n';
-      }
-      logContent += '\r\n\r\n';
-    }
-    if (d.verifyLogTail) {
-      logContent += '=== verify.log ===\r\n' + d.verifyLogTail + '\r\n\r\n';
-    }
-    if (d.stderrTail) {
-      logContent += '=== stderr (последние 100 строк) ===\r\n' + d.stderrTail;
-    }
+  panel.innerHTML = h;
 
-    if (logContent) {
-      openTerminal('terminal', logContent.replace(/\r?\n/g, '\r\n'));
-    }
+  if (prevState) {
+    panel.scrollTop = prevState.top;
+    const ta = $('#cont-msg');
+    if (ta && prevState.msg) { ta.value = prevState.msg; if (prevState.focusId === 'cont-msg') ta.focus(); }
   }
-  // Load session log asynchronously
-  loadSessionLog(id);
-  $('#detail').classList.add('open');
-  $('#overlay').classList.add('open');
+
+  // лог сессии: подгружаем, если вкладка открыта (или задача сменилась статус — обновляем)
+  if (detailTab === 'progress') { loadSessionLog(d.id); progressLoadedFor = d.id; }
+  else progressLoadedFor = null;
+  markSelectedRow();
+}
+
+function selectDetailTab(name) {
+  detailTab = name;
+  $$('#detail .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('#detail .pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+  if (name === 'progress' && progressLoadedFor !== openJobId) {
+    progressLoadedFor = openJobId;
+    loadSessionLog(openJobId);
+  }
 }
 
 function closeDetail() {
+  openJobId = null;
+  progressLoadedFor = null;
   $('#detail').classList.remove('open');
   $('#overlay').classList.remove('open');
+  markSelectedRow();
 }
 
+// Все кнопки карточки — через делегирование (id задачи не вставляем в onclick)
+$('#detail').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-open]');
+  if (a) { e.preventDefault(); openDetail(a.dataset.open); return; }
+  const t = e.target.closest('[data-tab]');
+  if (t) { selectDetailTab(t.dataset.tab); return; }
+  const b = e.target.closest('[data-act]');
+  if (!b || !openJobId) return;
+  const id = openJobId;
+  switch (b.dataset.act) {
+    case 'close': closeDetail(); break;
+    case 'kill': killJob(id); break;
+    case 'delete': deleteJob(id); break;
+    case 'accept': integrateJob(id, 'accept'); break;
+    case 'discard': integrateJob(id, 'discard'); break;
+    case 'send': sendToJob(id); break;
+    case 'refresh-log': loadSessionLog(id); break;
+  }
+});
+$('#detail').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.id === 'cont-msg' && openJobId) sendToJob(openJobId);
+});
+
 async function killJob(id) {
-  if (!confirm('Убить задачу ' + id + '? Процесс будет остановлен.')) return;
+  if (!confirm('Остановить задачу ' + id + '? Процесс будет прерван.')) return;
   try {
-    const r = await fetch(API + '/api/jobs/' + id + '/kill', { method: 'POST' });
-    const j = await r.json();
-    if (j.ok) {
-      toast('Задача убита: ' + id);
-      closeDetail();
-    } else {
-      toast(j.error || 'Ошибка при убийстве задачи', 'err');
-    }
-  } catch(e) {
+    const j = await post('/api/jobs/' + encodeURIComponent(id) + '/kill');
+    if (j.ok) { toast('Задача остановлена'); refreshDetail(); }
+    else toast(j.error || 'Не удалось остановить задачу', 'err');
+  } catch (e) {
     toast('Ошибка: ' + e.message, 'err');
   }
 }
@@ -657,18 +1127,53 @@ async function killJob(id) {
 async function deleteJob(id) {
   if (!confirm('Удалить задачу ' + id + '? Это действие необратимо.')) return;
   try {
-    const r = await fetch(API + '/api/jobs/' + id, { method: 'DELETE' });
+    const r = await fetch(API + '/api/jobs/' + encodeURIComponent(id), { method: 'DELETE' });
     const j = await r.json();
-    if (j.ok) {
-      toast('Задача удалена: ' + id);
-      closeDetail();
-    } else {
-      toast(j.error || 'Ошибка при удалении задачи', 'err');
-    }
-  } catch(e) {
+    if (j.ok) { toast('Задача удалена'); closeDetail(); }
+    else toast(j.error || 'Не удалось удалить задачу', 'err');
+  } catch (e) {
     toast('Ошибка: ' + e.message, 'err');
   }
 }
+
+async function integrateJob(id, action) {
+  const q = action === 'accept'
+    ? 'Принять изменения агента?\n\nВетка будет влита одним squash-коммитом в ТЕКУЩУЮ ветку основного репозитория, worktree и ветка удалятся.'
+    : 'Отбросить ветку агента?\n\nВсе изменения агента в worktree будут потеряны.';
+  if (!confirm(q)) return;
+  try {
+    const j = await post('/api/jobs/' + encodeURIComponent(id) + '/' + action);
+    if (j.ok) { toast(j.output || (action === 'accept' ? 'Принято' : 'Отброшено')); refreshDetail(); }
+    else toast(j.error || 'Не получилось', 'err');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+async function sendToJob(id) {
+  const ta = $('#cont-msg');
+  const message = ta ? ta.value.trim() : '';
+  if (!message) { toast('Напиши, что передать агенту', 'err'); if (ta) ta.focus(); return; }
+  const btn = $('#detail [data-act="send"]');
+  if (btn) btn.disabled = true;
+  try {
+    const j = await post('/api/jobs/' + encodeURIComponent(id) + '/send', { message });
+    if (j.ok) {
+      toast('Сессия продолжена — запущена новая задача');
+      pendingOpen = j.jobId;
+      setTimeout(() => { // если сокет не донёс новую задачу — откроем её сами
+        if (pendingOpen === j.jobId) { pendingOpen = null; openDetail(j.jobId); }
+      }, 5000);
+    } else {
+      toast(j.error || 'Не удалось продолжить сессию', 'err');
+    }
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 
 // ===================================================================== SESSION LOG
 
@@ -764,7 +1269,7 @@ async function loadSessionLog(id) {
 function fmtDuration(from, to) {
   if (!from || !to) return '---';
   const d = new Date(to) - new Date(from);
-  if (isNaN(d)) return '---';
+  if (isNaN(d) || d < 0) return '---';
   const s = Math.floor(d / 1000);
   if (s < 60) return s + 'с';
   if (s < 3600) return Math.floor(s / 60) + 'м ' + (s % 60) + 'с';
@@ -775,11 +1280,12 @@ function fmtDuration(from, to) {
 
 async function loadStats() {
   const s = await get('/api/stats');
+  if (activeTab !== 'stats') return; // пока грузилось, ушли на другую вкладку — не затираем её
   const a = s.all;
 
   let h = '<div class="stats-grid">';
   h += statCard('Задач', a.total);
-  h += statCard('Успешно', (100 * a.completed / a.total).toFixed(0) + '%');
+  h += statCard('Успешно', pct(a.completed, a.total));
   h += statCard('Токенов', fmtNum(a.tokens.total));
   h += statCard('Стоимость', '$' + (a.cost || 0).toFixed(4));
   h += '</div>';
@@ -787,14 +1293,14 @@ async function loadStats() {
   // by agent
   h += '<div class="card"><h3>По агентам</h3><table><thead><tr><th>Агент</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
   for (const [cap, d] of Object.entries(s.byAgent || {})) {
-    h += '<tr><td>' + esc(cap) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
+    h += '<tr><td>' + esc(cap) + '</td><td>' + d.total + '</td><td>' + pct(d.completed, d.total) + '</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
   }
   h += '</tbody></table></div>';
 
   // by model
   h += '<div class="card"><h3>По моделям</h3><table><thead><tr><th>Модель</th><th>Задач</th><th>Успех</th><th>Токенов</th><th>Стоимость</th></tr></thead><tbody>';
   for (const [m, d] of Object.entries(s.byModel || {})) {
-    h += '<tr><td>' + esc(m) + '</td><td>' + d.total + '</td><td>' + (100 * d.completed / d.total).toFixed(0) + '%</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
+    h += '<tr><td>' + esc(m) + '</td><td>' + d.total + '</td><td>' + pct(d.completed, d.total) + '</td><td>' + fmtNum(d.tokens.total) + '</td><td>' + fmtCost({cost:d.cost}) + '</td></tr>';
   }
   h += '</tbody></table></div>';
 
@@ -825,6 +1331,7 @@ function statCard(label, value) {
 
 async function loadSettings() {
   const agents = await get('/api/agents');
+  if (activeTab !== 'settings') return; // ушли с вкладки, пока грузилось
   let h = '';
 
   // Карточки агентов
@@ -1242,15 +1749,34 @@ function getMcpChecked() {
 // ===================================================================== TAB ROUTING
 
 const routes = {
-  jobs: loadJobs,
+  jobs: showJobs,
   stats: loadStats,
   settings: loadSettings,
 };
 
-function switchTab(name) {
-  $$('nav button').forEach(b => b.classList.remove('active'));
-  $('nav button[data-tab="' + name + '"]').classList.add('active');
-  routes[name]();
+let tabTimer = null;
+
+async function switchTab(name) {
+  activeTab = name;
+  clearInterval(tabTimer);
+  tabTimer = null;
+  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  // старое содержимое убираем сразу: иначе на миг видна чужая вкладка
+  $('#main').innerHTML = name === 'jobs' ? '' : '<div class="empty">Загрузка…</div>';
+  try {
+    await routes[name]();
+  } catch (e) {
+    if (activeTab === name) {
+      $('#main').innerHTML = '<div class="empty err">Не удалось загрузить: ' + esc(e.message) +
+        '<br><button onclick="switchTab(\'' + name + '\')">Повторить</button></div>';
+    }
+    return;
+  }
+  // Статистика только читает — её можно обновлять сама. «Агенты» — нельзя: там
+  // формы, а перерисовка стирает несохранённые правки (раньше — каждые 5 с).
+  if (name === 'stats') {
+    tabTimer = setInterval(() => { if (!document.hidden) loadStats().catch(() => {}); }, 15000);
+  }
 }
 
 $$('nav button').forEach(b => {
@@ -1258,7 +1784,6 @@ $$('nav button').forEach(b => {
 });
 
 $('#overlay').addEventListener('click', closeDetail);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
 
 // ===================================================================== TOOLTIP
 
@@ -1336,22 +1861,11 @@ function exportAgent(name) {
 }
 
 // init
-loadJobs();
-// не перезагружать settings, пока открыт редактор агента — иначе loadSettings
-// сносит DOM и editor пропадает
+switchTab('jobs');
+// живое время у работающих задач: между событиями сокета таблица иначе не меняется
 setInterval(() => {
-  const tab = $('nav button.active')?.dataset?.tab;
-  if (tab === 'settings') {
-    const ed = $('#agent-editor');
-    if (ed && !['', 'none'].includes(ed.style.display)) return;
-  }
-  // For jobs tab, WebSocket/SSE handles updates, so we don't need polling
-  if (tab === 'jobs') {
-    // WebSocket or SSE is already running via loadJobs()
-    return;
-  }
-  (routes[tab] || loadJobs)();
-}, 5000);
+  if (activeTab === 'jobs' && !document.hidden && jobsCache.some(j => j.status === 'running')) renderJobs();
+}, 15000);
 </script>
 </body>
 </html>
