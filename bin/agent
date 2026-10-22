@@ -85,7 +85,8 @@ usage_all() {
   agent worktree-gc --repo <path> [--apply] [--older-than N]  отчёт/уборка worktree и веток agent/*
   agent stats [--days N] [--json]                     агрегация стоимости и токенов по всем задачам
   agent init                                          установить agent в PATH (~/bin/agent) и обновить skill
-  agent dashboard [--port N] [--open]                 локальный веб-дашборд (localhost:9191)
+  agent dashboard [--port N] [--open] [--idle-exit MIN] [--background]
+                                                      локальный веб-дашборд (localhost:9191)
   agent cron-daily                                    ежедневная очистка (worktree-gc + clean)
   agent agent list                                    список агентов (agents/*.json)
   agent agent show <name>                             показать полный JSON агента
@@ -773,6 +774,23 @@ cmd_init() {
       && echo "обёртка установлена: $wrapper → $AI_HOME/bin/agent"
   fi
 
+  # Windows: PowerShell/cmd не умеют запускать bash-скрипт без расширения —
+  # `agent` из PowerShell просто открывает файл как текст. agent.cmd в той
+  # же папке PowerShell выбирает раньше, он зовёт Git Bash явно.
+  if command -v cygpath >/dev/null 2>&1; then
+    local cmd_wrapper="${bin_dir}/agent.cmd" cmd_marker="rem managed-by: ai-orchestrator init (agent.cmd)"
+    local git_bash; git_bash="$(cygpath -w /)"; git_bash="${git_bash%\\}\\bin\\bash.exe"
+    if [[ -e "$cmd_wrapper" ]] && ! grep -qF "$cmd_marker" "$cmd_wrapper" 2>/dev/null; then
+      echo "предупреждение: $cmd_wrapper уже существует и не похож на обёртку agent — не трогаю"
+    elif [[ ! -f "$(cygpath -u "$git_bash")" ]]; then
+      echo "предупреждение: Git Bash не найден ($git_bash) — agent.cmd не создан, из PowerShell agent работать не будет"
+    else
+      printf '%s\r\n' "@echo off" "$cmd_marker" \
+        "\"$git_bash\" \"$AI_HOME/bin/agent\" %*" "exit /b %ERRORLEVEL%" > "$cmd_wrapper" \
+        && echo "обёртка для PowerShell/cmd установлена: $cmd_wrapper"
+    fi
+  fi
+
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
     *) echo "  ~/bin не в PATH — добавь: echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.bashrc" ;;
@@ -846,12 +864,13 @@ cmd_cron_daily() {
 }
 
 cmd_dashboard() {
-  local port="9191" open_flag=""
+  local port="9191" extra=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --port) port="${2:-9191}"; shift 2 ;;
-      --open) open_flag="--open"; shift ;;
+      --open|--background) extra+=("$1"); shift ;;
+      --idle-exit) extra+=("$1" "${2:?--idle-exit требует число минут}"); shift 2 ;;
       *) die "неизвестная опция: $1" ;;
     esac
   done
@@ -860,7 +879,7 @@ cmd_dashboard() {
   [[ -f "$dashboard_js" ]] || die "dashboard.js не найден: $dashboard_js"
 
   echo "запуск дашборда на http://localhost:$port ..."
-  $NODE "$dashboard_js" --port "$port" $open_flag
+  $NODE "$dashboard_js" --port "$port" "${extra[@]}"
 }
 
 main() {

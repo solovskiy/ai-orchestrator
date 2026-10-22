@@ -22,3 +22,6 @@ test-agent-v3-result.md
 # Локальные секреты/ключи — не должны попасть в публичный репозиторий
 # (см. docs/ideas.md, «Ключи в .claude/settings.local.json»)
 **/.claude/settings.local.json
+
+# Ярлык запуска дашборда (абсолютные пути этой машины)
+*.lnk
