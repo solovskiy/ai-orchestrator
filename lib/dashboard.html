@@ -166,6 +166,11 @@ label .tip { font-weight: normal; }
 #agent-editor { max-width: 860px; }
 #agent-editor h3 { margin-bottom: 12px; font-size: 15px; }
 .ae-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* Пока форма агента не заполнена данными с сервера, она заблокирована:
+   пустую форму нельзя сохранять — она затирала промпт, права и MCP агента. */
+#agent-editor.ae-loading .ae-section { pointer-events: none; opacity: .5; }
+#agent-editor.ae-loading h3::after { content: ' · загрузка…'; color: var(--muted); font-weight: 400; font-size: 13px; }
+#agent-editor button:disabled { opacity: .5; cursor: not-allowed; }
 textarea { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
 
 /* ---- общие мелочи */
@@ -1407,10 +1412,10 @@ async function loadSettings() {
 
   // Кнопки
   h += '<div class="ae-actions">';
-  h += '<button class="primary" onclick="saveAgent()">💾 Сохранить</button>';
-  h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer">📥 Export .md</button>';
-  h += '<button class="danger" onclick="deleteAgent()">🗑 Удалить</button>';
-  h += '<button onclick="document.getElementById(\'agent-editor\').style.display=\'none\'">Отмена</button>';
+  h += '<button class="primary" id="ae-save" onclick="saveAgent()" disabled>💾 Сохранить</button>';
+  h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer" disabled>📥 Export .md</button>';
+  h += '<button class="danger" id="ae-delete" onclick="deleteAgent()" disabled>🗑 Удалить</button>';
+  h += '<button onclick="closeAgentEditor()">Отмена</button>';
   h += '</div></div>';
 
   // Очистка
@@ -1420,54 +1425,112 @@ async function loadSettings() {
   h += '<pre id="cleanup-output" style="margin-top:8px;display:none"></pre></div>';
 
   $('#main').innerHTML = h;
-  await loadRunners();
+  // форма пересоздана пустой и скрытой — прежнее редактирование недействительно
+  // (его незавершённый editAgent увидит смену номера и ничего не запишет в новую форму)
+  window._agentEditSeq = (window._agentEditSeq || 0) + 1;
+  window._agentEditorReady = false;
+  window._editingAgent = null;
+  window._runnersPromise = loadRunners();
+  await window._runnersPromise;
+}
+
+// Блокирует/разблокирует форму агента. Пока форма не заполнена данными с
+// сервера, сохранять нельзя: пустая форма, записанная в файл, стирала промпт,
+// права и MCP агента (так выглядел баг «промпт пропадает при сохранении»).
+function setAgentEditorReady(ready) {
+  window._agentEditorReady = ready;
+  const ed = $('#agent-editor');
+  if (ed) ed.classList.toggle('ae-loading', !ready);
+  for (const id of ['#ae-save', '#ae-export', '#ae-delete']) {
+    const b = $(id);
+    if (b) b.disabled = !ready;
+  }
+}
+
+// Модель агента может отсутствовать в списке раннера (например claude-ds/*
+// нет в `opencode models`). Тогда добавляем её первой опцией, иначе при
+// сохранении она молча заменилась бы первой моделью из списка.
+// Вставка именно в начало select: последняя опция списка лежит внутри
+// <optgroup>, и insertBefore(…, последняя) бросал исключение, обрывая editAgent.
+function ensureModelOption(sel, value) {
+  if (!sel || !value || value === '__custom__') return;
+  if ([...sel.options].some(o => o.value === value)) return;
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = value + ' (текущая)';
+  sel.insertBefore(opt, sel.firstChild);
+}
+
+// Закрывает редактор и делает его «ничьим»: иначе Ctrl+S сохранял бы скрытую форму
+function closeAgentEditor() {
+  window._agentEditSeq = (window._agentEditSeq || 0) + 1;
+  window._editingAgent = null;
+  setAgentEditorReady(false);
+  const ed = $('#agent-editor');
+  if (ed) ed.style.display = 'none';
+  const nm = $('#ae-name');
+  if (nm) nm.textContent = '';
 }
 
 async function editAgent(name) {
+  const seq = window._agentEditSeq = (window._agentEditSeq || 0) + 1;
   window._editingAgent = name;
-  // всегда свежий запрос, без кэша браузера — защита от устаревших данных
-  const a = await get('/api/agents/' + name, { nocache: true });
-  window._agentMtime = a._mtime; // для защиты от stale-записи при save
+  setAgentEditorReady(false);
   $('#agent-editor').style.display = 'block';
   $('#ae-name').textContent = name;
-  // update export button
-  const expBtn = $('#ae-export');
-  if (expBtn) expBtn.setAttribute('onclick', 'exportAgent(\'' + name + '\')');
-  // runner — определяет, какой каталог моделей показывать
-  const runnerSel = $('#ae-runner');
-  if (runnerSel) runnerSel.value = a.runner || '';
-  if (!a.runner || a.runner === 'opencode') {
-    await refreshModels();
-  } else {
-    const rn = (window._runners || []).find(r => r.name === a.runner);
-    populateModelSelect((rn && rn.models || []).map(id => ({ id, label: id })), 'defaults');
-  }
-  // model: select or custom
-  const sel = $('#ae-model');
-  const customInput = $('#ae-model-custom');
-  if (a.model && sel && ![...sel.options].some(o => o.value === a.model)) {
-    // model not in list — add it
-    const opt = document.createElement('option');
-    opt.value = a.model; opt.textContent = a.model;
-    sel.insertBefore(opt, sel.options[sel.options.length - 1]); // before 'другая'
-  }
-  if (sel) sel.value = a.model || (sel.options[0] ? sel.options[0].value : '');
-  onModelSelect();
-  $('#ae-variant').value = a.variant || '';
-  $('#ae-mode').value = a.mode || 'primary';
-  $('#ae-temp').value = a.temperature != null ? a.temperature : '';
-  $('#ae-worktree').value = a.worktree ? '1' : '0';
-  $('#ae-autocommit').value = a.autoCommit ? '1' : '0';
-  $('#ae-maxsteps').value = a.maxSteps || '';
-  $('#ae-timeout').value = a.timeout || '1800';
-  $('#ae-desc').value = a.description || '';
-  $('#ae-prompt').value = a.systemPrompt || '';
-  $('#ae-perms').value = a.permissions ? Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(',') : 'bash,read,edit,glob,grep';
+  try {
+    // клик по карточке мог прийти раньше, чем загрузился список раннеров
+    if (window._runnersPromise) await window._runnersPromise;
+    // всегда свежий запрос, без кэша браузера — защита от устаревших данных
+    const a = await get('/api/agents/' + name, { nocache: true });
+    if (seq !== window._agentEditSeq) return; // открыли другого агента или форму пересоздали
+    window._agentMtime = a._mtime; // для защиты от stale-записи при save
+    window._loadedPrompt = a.systemPrompt || '';
+    // update export button
+    const expBtn = $('#ae-export');
+    if (expBtn) expBtn.setAttribute('onclick', 'exportAgent(\'' + name + '\')');
+    // runner — определяет, какой каталог моделей показывать
+    const runnerSel = $('#ae-runner');
+    if (runnerSel) runnerSel.value = a.runner || '';
+    if (!a.runner || a.runner === 'opencode') {
+      await refreshModels();
+    } else {
+      const rn = (window._runners || []).find(r => r.name === a.runner);
+      populateModelSelect((rn && rn.models || []).map(id => ({ id, label: id })), 'defaults');
+    }
+    if (seq !== window._agentEditSeq) return;
+    // model: select or custom
+    const sel = $('#ae-model');
+    ensureModelOption(sel, a.model);
+    if (sel) sel.value = a.model || (sel.options[0] ? sel.options[0].value : '');
+    onModelSelect();
+    $('#ae-variant').value = a.variant || '';
+    $('#ae-mode').value = a.mode || 'primary';
+    $('#ae-temp').value = a.temperature != null ? a.temperature : '';
+    $('#ae-worktree').value = a.worktree ? '1' : '0';
+    $('#ae-autocommit').value = a.autoCommit ? '1' : '0';
+    $('#ae-maxsteps').value = a.maxSteps || '';
+    $('#ae-timeout').value = a.timeout || '1800';
+    $('#ae-desc').value = a.description || '';
+    $('#ae-prompt').value = a.systemPrompt || '';
+    $('#ae-perms').value = a.permissions ? Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(',') : 'bash,read,edit,glob,grep';
 
-  // Загружаем MCP-серверы и расставляем чекбоксы
-  loadMcpCheckboxes(a.mcp || []);
+    // MCP-чекбоксы ждём: сохранение до их загрузки стирало mcp агента
+    await loadMcpCheckboxes(a.mcp || []);
+    if (seq !== window._agentEditSeq) return;
+    if (!$('#mcp-checkboxes .mcp-list') && (a.mcp || []).length) {
+      throw new Error('не загрузился список MCP-серверов');
+    }
 
-  $('#agent-editor').scrollIntoView({ behavior: 'smooth' });
+    setAgentEditorReady(true);
+    $('#agent-editor').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    // половину формы пользователю не оставляем: закрываем редактор, сохранить её нельзя
+    if (seq === window._agentEditSeq) {
+      closeAgentEditor();
+      toast('Не удалось открыть агента ' + name + ': ' + e.message, 'err');
+    }
+  }
 }
 
 async function createAgent() {
@@ -1478,6 +1541,9 @@ async function createAgent() {
     mode: 'primary', worktree: false, timeout: 1800, autoCommit: false,
     permissions: { bash: 'allow', read: 'allow', edit: 'allow', glob: 'allow', grep: 'allow' },
     systemPrompt: '', description: '',
+    // сервер откажет (409), если агент с таким именем уже есть, — иначе
+    // «создание» затирало существующего агента вместе с промптом
+    _create: true,
   });
   if (r.ok) { loadSettings(); toast('создан: ' + name); }
   else toast(r.error, 'err');
@@ -1485,6 +1551,12 @@ async function createAgent() {
 
 async function saveAgent() {
   const name = $('#ae-name').textContent;
+  if (!name) return;
+  // форма ещё грузится (или не загрузилась): сохранение записало бы в файл пустые поля
+  if (!window._agentEditorReady || window._editingAgent !== name) {
+    return toast('Форма ещё загружается — подожди секунду и повтори', 'err');
+  }
+  if (window._agentSaving) return; // защита от двойного клика / Ctrl+S
   const agent = {
     name,
     runner: $('#ae-runner').value || '',
@@ -1512,19 +1584,45 @@ async function saveAgent() {
   const mcpChecked = getMcpChecked();
   if (mcpChecked.length > 0) agent.mcp = mcpChecked;
 
-  const r = await post('/api/agents/' + name, agent);
-  if (r.ok) { toast('сохранено: ' + name); loadSettings(); return; }
-
-  // 409 Conflict — файл изменился с момента открытия формы
-  if (r.error && r.error.indexOf('изменился с момента открытия') >= 0) {
-    toast('⚠ Конфликт: файл изменился с момента открытия. Обновляю форму...', 'err');
-    // перезагружаем актуальные данные с сервера, форму не закрываем —
-    // пользователь увидит свежие значения и сможет сохранить снова
-    try { await editAgent(name); } catch(e) { toast('Не удалось обновить: ' + e.message, 'err'); }
-    return;
+  // Промпт, который был у агента, а в форме стал пустым, — почти всегда
+  // ошибка, а не намерение: спрашиваем отдельно
+  if (!agent.systemPrompt.trim() && (window._loadedPrompt || '').trim()) {
+    if (!confirm('System Prompt пуст, хотя у агента ' + name + ' он сейчас есть.\nСохранить агента без промпта?')) return;
   }
 
-  toast(r.error, 'err');
+  window._agentSaving = true;
+  const saveBtn = $('#ae-save');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const r = await post('/api/agents/' + name, agent);
+    if (r.ok) { toast('сохранено: ' + name); loadSettings(); return; }
+
+    // 409 stale — файл агента изменили на диске (например, оркестратор),
+    // пока форма была открыта. Форму НЕ перезагружаем: это стирало бы
+    // набранные пользователем правки. Спрашиваем, что делать.
+    if (r.code === 'stale') {
+      const overwrite = confirm(
+        'Файл агента ' + name + ' изменился на диске после того, как ты открыл форму.\n\n' +
+        'OK — перезаписать файл версией из формы.\n' +
+        'Отмена — ничего не сохранять; форма останется как есть (свои правки можно скопировать, потом открыть агента заново).');
+      if (!overwrite) { toast('не сохранено: файл на диске не тронут'); return; }
+      const fresh = await get('/api/agents/' + name, { nocache: true });
+      agent._loadedAt = fresh._mtime;
+      window._agentMtime = fresh._mtime;
+      const r2 = await post('/api/agents/' + name, agent);
+      if (r2.ok) { toast('сохранено: ' + name); loadSettings(); return; }
+      return toast(r2.error, 'err');
+    }
+
+    toast(r.error, 'err');
+  } catch (e) {
+    toast('Не удалось сохранить: ' + e.message, 'err');
+  } finally {
+    window._agentSaving = false;
+    // loadSettings() после успеха пересоздал форму — кнопку возвращает setAgentEditorReady
+    const b = $('#ae-save');
+    if (b && window._agentEditorReady) b.disabled = false;
+  }
 }
 
 async function deleteAgent() {
@@ -1602,6 +1700,8 @@ function populateModelSelect(models, source) {
   custom.textContent = '▸ другая модель...';
   sel.appendChild(custom);
 
+  // текущая модель может не входить в новый список — не теряем её молча
+  ensureModelOption(sel, cur);
   if (cur && cur !== '__custom__') sel.value = cur;
   onModelSelect();
 }
@@ -1638,6 +1738,9 @@ async function refreshModels() {
     og.appendChild(custom);
     sel.appendChild(og);
 
+    // кнопка 🔄 пересобирает список: текущей модели агента (например claude-ds/*)
+    // в нём может не быть — без этого выбор молча уезжал на первую модель
+    ensureModelOption(sel, cur);
     if (cur && cur !== '__custom__') sel.value = cur;
     onModelSelect();
     toast('моделей: ' + r.models.length + ' (' + r.source + ')');
