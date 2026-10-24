@@ -20,7 +20,7 @@ process.stdin.on('end', () => {
     'Многоисточниковое исследование/кодоген по образцу — делегируй через',
     '`agent` (один фоновый Bash, run_in_background: true):',
     '  agent agents   # ростер, если ещё не смотрел в этой сессии',
-    '  agent delegate <research|coding|...> "<задача>"',
+    '  agent delegate general "<задача>" [--tier light|medium|heavy]',
     'Чтение ЛОКАЛЬНОГО кода (Explore/Plan) — игнорируй это напоминание.',
   ].join('\n');
 

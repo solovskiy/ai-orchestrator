@@ -18,15 +18,17 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 просто `agent`, без пути:
 
 ```bash
-# agent agents — сверить актуальный ростер один раз за сессию (растёт, не
-# хардкодить). Агент по умолчанию — `general` (любая задача); другие —
-# только если нужен их MCP (browser, testing). Для изоляции кода — --worktree.
+# agent agents — сверить ростер и уровни один раз за сессию (не хардкодить).
+# Рабочий агент один — `general`; другие (browser, testing) — только если
+# нужен их MCP. «Сложность» задаёт уровень --tier light|medium|heavy:
+#   light  — поиск, факты, мелочи;  medium (по умолчанию) — обычная работа;
+#   heavy  — сложный код, сам работает в worktree (потом agent accept/discard).
+# Какая модель за уровнем — в lib/tiers.json, не запоминать.
 
-# Позиционная форма: агент + задача, без --task/--repo/--model — думай
-# задачей, не раннером. Какая модель сейчас за research/coding — не
-# запоминать, настраивается в agents/*.json (см. docs/workflow.md).
-agent delegate research "сделай ..."
-agent delegate coding "реализуй ..." --verify "npm test"
+# Позиционная форма: агент + задача, без --task/--repo/--model.
+agent delegate general "сделай ..."                       # medium
+agent delegate general "найди ..." --tier light
+agent delegate general "реализуй ..." --tier heavy --verify "npm test"
 ```
 
 `delegate` сам делает start + wait + (при необходимости) один heal-ретрай +

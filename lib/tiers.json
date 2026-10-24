@@ -1,0 +1,22 @@
+{
+  "defaultTier": "medium",
+  "agents": ["general"],
+  "tiers": {
+    "light": {
+      "description": "Лёгкий: поиск, сбор фактов, мелкие правки. Дешёвая быстрая модель, только чтение/мелочи в самом репо.",
+      "model": "claude-ds/deepseek-v4-flash",
+      "variant": "low"
+    },
+    "medium": {
+      "description": "Средний (по умолчанию): обычная работа — разобраться в модуле, написать функцию, ресёрч, доки.",
+      "model": "claude-ds/deepseek-v4-pro",
+      "variant": "medium"
+    },
+    "heavy": {
+      "description": "Тяжёлый: сложный код и трудные баги. Сильная модель, больше размышлений, работает в отдельном worktree (потом agent accept/discard).",
+      "model": "claude-ds/deepseek-v4-pro",
+      "variant": "high",
+      "worktree": true
+    }
+  }
+}

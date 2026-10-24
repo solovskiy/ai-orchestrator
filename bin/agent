@@ -99,13 +99,20 @@ usage_all() {
   --repo <path>           репозиторий (по умолч. — git-корень текущей директории)
   --prompt-file <path>    ТЗ из файла
   --prompt <text>         ТЗ строкой (или второй позиционный аргумент; иначе — stdin)
+  --tier <уровень>        light | medium | heavy — насколько сильную модель взять
+                          (только у агентов из lib/tiers.json, сейчас general;
+                          без флага — defaultTier, обычно medium; список: agent agents)
   --worktree              создать git worktree под задачу и работать в нём
-                          (--agent уже включает это сам, если у агента worktree: true)
+                          (агент или уровень сами включают это, если у них worktree: true)
   --branch <name>         имя ветки для worktree (по умолч. agent/<slug>-<id>)
   --base <ref>            от чего ответвлять worktree (по умолч. текущий HEAD)
   --verify "<cmd>"        команда проверки после агента, напр. "npm run typecheck && npm test"
 
 Опции delegate дополнительно:
+  --json                     вместо текста — ОДНА JSON-строка итога в stdout
+                             (ok, errorCode, result, worktree.accept/discard, tokens…);
+                             код выхода 0 ok · 1 ошибка · 2 ещё идёт (WAIT_TIMEOUT).
+                             То же у `agent status <jobId> --json`
   --timeout <сек>            таймаут ожидания (по умолч. 1800)
   --no-heal                  не чинить провал автоматически (ни по outcome, ни по verify)
   --max-verify-retries <N>   сколько раз продолжать сессию при красном --verify (по умолч. 2)
@@ -171,7 +178,7 @@ ensure_git_exclude() {
 cmd_start() {
   local task="" repo="" prompt_file="" prompt_text="" model="" model_explicit=0 verify=""
   local runner="opencode" runner_explicit=0 branch="" base="" make_worktree=0
-  local max_parallel="" force=0 capability="" variant=""
+  local max_parallel="" force=0 capability="" variant="" tier="" cap_tier=""
   local positional=()
 
   while [[ $# -gt 0 ]]; do
@@ -189,6 +196,7 @@ cmd_start() {
       --base)        base="${2:-}"; shift 2 ;;
       --worktree)    make_worktree=1; shift ;;
       --variant)     variant="${2:-}"; shift 2 ;;
+      --tier)        tier="${2:-}"; shift 2 ;;
       --max-parallel) max_parallel="${2:-}"; shift 2 ;;
       --force)        force=1; shift ;;
       -h|--help)     usage; return 0 ;;
@@ -212,6 +220,8 @@ cmd_start() {
 
   [[ -n "$capability" || $model_explicit -eq 1 ]] \
     || die "укажи агента: agent delegate <агент> \"<задача>\" (агенты: $(agent_roster))"
+  [[ -z "$tier" || -n "$capability" ]] \
+    || die "--tier задаётся вместе с агентом: agent delegate general \"<задача>\" --tier heavy"
 
   # --agent/--capability <name>: читает конфиг агента из дашборда
   # (AI_DASHBOARD_URL), при недоступности — локальный файл
@@ -219,12 +229,20 @@ cmd_start() {
   if [[ -n "$capability" ]]; then
     local cap_model="" cap_worktree="" cap_variant="" cap_runner=""
 
-    # Try dashboard first → local agents/<name>.json (v3)
-    local read_output
-    if read_output="$(agent_js agent-read "$capability" 2>/dev/null)"; then
-      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; } <<< "$read_output"
+    # Try dashboard first → local agents/<name>.json (v3). agent-read сам
+    # накладывает уровень (--tier или defaultTier из lib/tiers.json).
+    local read_output read_err
+    read_err="$(mktemp)"
+    if read_output="$(agent_js agent-read "$capability" "$tier" 2>"$read_err")"; then
+      { IFS= read -r cap_model; IFS= read -r cap_worktree; IFS= read -r cap_variant; IFS= read -r cap_runner; IFS= read -r cap_tier; } <<< "$read_output"
+      rm -f "$read_err"
     else
-      die "неизвестный агент: $capability (агенты: $(agent_roster))"
+      local read_msg; read_msg="$(sed -n 's/^agent-read: //p' "$read_err" | head -n1)"
+      rm -f "$read_err"
+      case "$read_msg" in
+        *уровень*|*--tier*) die "$read_msg" ;;
+        *) die "неизвестный агент: $capability (агенты: $(agent_roster))" ;;
+      esac
     fi
 
     # --model вместе с --agent должен быть той же модели (тот же провайдер) —
@@ -293,7 +311,7 @@ cmd_start() {
   local cwd="$repo" base_branch="" base_commit=""
   if (( make_worktree )); then
     git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 \
-      || die "не git-репозиторий: $repo — агент ${capability:-агент} работает в своей ветке; для чтения/отчёта возьми research-агента или сделай git init"
+      || die "не git-репозиторий: $repo — агент ${capability:-агент} работает в своей ветке; для чтения/отчёта возьми уровень light или medium (они без worktree) или сделай git init"
 
     base_branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
     base_commit="$(git -C "$repo" rev-parse "${base:-HEAD}" 2>/dev/null)"
@@ -374,6 +392,7 @@ cmd_start() {
     "baseCommit=$base_commit" \
     "model=$model" \
     "variant=$variant" \
+    "tier=$cap_tier" \
     "agent=$agent_name" \
     "verifyCmd=$verify" \
     || die "не удалось создать job.json"
@@ -396,7 +415,48 @@ cmd_start() {
 # на выходе. Принимает те же опции, что и `start` (--model/--verify/
 # --worktree/...), плюс свои: --timeout (передаётся в wait) и --no-heal
 # (не чинить провал автоматически, просто вернуть его как есть).
+# Пометки хода delegate для режима --json: последний jobId цепочки и факт
+# таймаута ожидания. Пишутся в файл (а не в переменные), потому что в --json
+# тело работает в подоболочке — иначе exit из die убил бы обёртку до конверта.
+_delegate_note() {
+  [[ -n "${DELEGATE_STATE_FILE:-}" ]] && printf '%s
+' "$*" >> "$DELEGATE_STATE_FILE"
+  return 0
+}
+
+# agent delegate ... [--json] — с --json весь человекочитаемый вывод уходит
+# в /dev/null (stderr сохраняется), а в stdout печатается ОДНА JSON-строка
+# итога (см. buildEnvelope в lib/agent.js). Код выхода: 0 — ok, 1 — ошибка,
+# 2 — delegate перестал ждать, задача ещё идёт (errorCode WAIT_TIMEOUT).
 cmd_delegate() {
+  local json=0 args=() a
+  for a in "$@"; do
+    if [[ "$a" == "--json" ]]; then json=1; else args+=("$a"); fi
+  done
+  if (( ! json )); then
+    _delegate_run "${args[@]}"
+    return $?
+  fi
+
+  local state_file err_file
+  state_file="$(mktemp)"; err_file="$(mktemp)"
+  ( export DELEGATE_STATE_FILE="$state_file"; _delegate_run "${args[@]}" ) >/dev/null 2>"$err_file"
+  cat "$err_file" >&2
+
+  local final_id wait_timeout=""
+  final_id="$(sed -n 's/^job //p' "$state_file" | tail -n1)"
+  grep -q '^wait-timeout$' "$state_file" && wait_timeout="--wait-timeout"
+  local msg; msg="$(grep -v '^[[:space:]]*$' "$err_file" | tail -n1)"
+  rm -f "$state_file" "$err_file"
+
+  if [[ -z "$final_id" || ! -d "$JOBS_DIR/$final_id" ]]; then
+    agent_js envelope-error START_FAILED "${msg:-задача не стартовала}"
+    return 1
+  fi
+  agent_js envelope "$JOBS_DIR/$final_id" $wait_timeout
+}
+
+_delegate_run() {
   local timeout=1800 no_heal=0 max_verify_retries="${AGENT_MAX_VERIFY_RETRIES:-2}"
   local start_args=()
   while [[ $# -gt 0 ]]; do
@@ -411,9 +471,10 @@ cmd_delegate() {
   local start_out job_id
   start_out="$(cmd_start "${start_args[@]}")" || { echo "$start_out" >&2; return 1; }
   job_id="$(head -n1 <<<"$start_out")"
+  _delegate_note job "$job_id"
   echo "$start_out"
 
-  cmd_wait "$job_id" --timeout "$timeout"
+  cmd_wait "$job_id" --timeout "$timeout" || _delegate_note wait-timeout
 
   local d
   d="$(job_dir_of "$job_id")"
@@ -438,8 +499,9 @@ cmd_delegate() {
     if [[ "$heal_rc" == "0" && -d "$JOBS_DIR/$heal_job_id" ]]; then
       echo ""
       echo "$heal_out"
-      cmd_wait "$heal_job_id" --timeout "$timeout"
+      cmd_wait "$heal_job_id" --timeout "$timeout" || _delegate_note wait-timeout
       job_id="$heal_job_id"
+      _delegate_note job "$job_id"
     else
       echo "$heal_out"
     fi
@@ -463,8 +525,9 @@ cmd_delegate() {
       if [[ "$vh_rc" == "0" && -d "$JOBS_DIR/$vh_job_id" ]]; then
         echo ""
         echo "$vh_out"
-        cmd_wait "$vh_job_id" --timeout "$timeout"
+        cmd_wait "$vh_job_id" --timeout "$timeout" || _delegate_note wait-timeout
         job_id="$vh_job_id"
+        _delegate_note job "$job_id"
       else
         echo "$vh_out"
         break
@@ -902,7 +965,13 @@ main() {
     clean)   cmd_clean "$@" ;;
     worktree-gc) cmd_worktree_gc "$@" ;;
     list)    agent_js list "$JOBS_DIR" ;;
-    status)  d="$(job_dir_of "${1:-}")" || exit 1; agent_js show "$d" ;;
+    status)
+      local sid="" sjson=0 sa
+      for sa in "$@"; do
+        if [[ "$sa" == "--json" ]]; then sjson=1; else sid="$sa"; fi
+      done
+      d="$(job_dir_of "$sid")" || exit 1
+      if (( sjson )); then agent_js envelope "$d"; else agent_js show "$d"; fi ;;
     tail)    d="$(job_dir_of "${1:-}")" || exit 1; agent_js tail "$d" "${2:-20}" ;;
     wait)    cmd_wait "$@" ;;
     result)  cat "$(job_dir_of "${1:-}")/result.md" 2>/dev/null \

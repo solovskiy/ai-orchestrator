@@ -233,6 +233,17 @@ agent agent delete <name>   # remove an agent (agents/<name>.json)
 
 ### Browser agents (two independent, do not confuse)
 
+**Tiers.** The working agent is `general`; how strong a model it gets is chosen
+with `--tier light|medium|heavy` (config: `lib/tiers.json` — model, variant and
+`worktree` per tier; `heavy` runs in its own worktree). `variant` is passed to
+Claude Code runners as `--effort`. `agent agents` prints the tier table.
+
+**Machine-readable result.** `agent delegate ... --json` and `agent status <jobId> --json`
+print a single JSON line (`ok`, `done`, `errorCode`, `result`, `worktree.accept/discard`,
+`tokens`, `chain`, …) instead of text; exit code 0 ok · 1 error · 2 still running
+(`WAIT_TIMEOUT`). Error codes are stable (`START_FAILED`, `VERIFY_FAILED`,
+`PERMISSION_REJECTED`, `RUNNER_FAILED`, …) — see `classifyJobError` in `lib/agent.js`.
+
 Two agents provide browser access through different MCP servers for different
 use cases. Both are `worktree: false` — read the project, write a report,
 never touch code or git.
