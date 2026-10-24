@@ -121,7 +121,11 @@ if [[ "$IS_WORKTREE" == "1" && -n "$(cd "$CWD" && git status --porcelain 2>/dev/
   # трекається в main цільових репозиторіїв; інакше кожен авто-коміт тягне
   # цей файл, і оркестратор не може змерджити гілку агента напряму —
   # доводиться cherry-pick лише робочого коміту (помічено 2026-08-03).
-  if ( cd "$CWD" && git add -A -- . ':!.opencode/agents' && git commit -F "$MSG_FILE" ) >/dev/null 2>&1; then
+  # Если .opencode в .gitignore репозитория (как в самом .ai), исключающий
+  # pathspec даёт rc=1 («paths are ignored») и обрывал цепочку — коммит не
+  # делался, accept сливал пустую ветку. Тогда обычный `add -A` безопасен:
+  # игнорируемый .opencode он и так пропускает.
+  if ( cd "$CWD" && { git add -A -- . ':!.opencode/agents' || git add -A; } && git commit -F "$MSG_FILE" ) >/dev/null 2>&1; then
     jset "autoCommitted=true"
   else
     jset "autoCommitted=false"
