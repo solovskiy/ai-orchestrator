@@ -321,6 +321,7 @@ const OUTCOME_TEXT = {
   permission_rejected: 'Агент попытался выполнить запрещённое действие',
   validation_error: 'Агент вызвал инструмент с некорректными аргументами',
   abandoned: 'Агент остановился, не доведя шаг до конца',
+  output_limit: 'Ответ агента оборван лимитом выходных токенов (файл не записан)',
   error: 'Ошибка на стороне раннера (сеть, API или сбой процесса)',
 };
 
@@ -343,7 +344,7 @@ function statusBadge(s, healthWarnings) {
 
 function diagBadge(outcome, errorMsg) {
   if (!outcome) return '';
-  var show = ['permission_rejected', 'validation_error', 'abandoned', 'error'];
+  var show = ['permission_rejected', 'validation_error', 'abandoned', 'output_limit', 'error'];
   if (show.indexOf(outcome) === -1) return '';
   var title = errorMsg ? ' title="' + esc(errorMsg.slice(0, 120)) + '"' : '';
   return ' <span class="status diag-error"' + title + '>' + esc(outcome) + '</span>';

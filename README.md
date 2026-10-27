@@ -155,7 +155,7 @@ each one to finish in a single call.
 | `wait <id>...` | wait for task(s) to finish; run in background — provides notification (see `docs/workflow.md`) |
 | `result <id>` | final answer only |
 | `kill <id>` | stop |
-| `heal <id>` | one-shot auto-recovery of a failed task (`validation_error`/`abandoned`) — sends a structured message into the session (see `diagnosis.json`, `outcome` field); `delegate` calls this automatically |
+| `heal <id>` | one-shot auto-recovery of a failed task (`validation_error`/`abandoned`/`output_limit`) — sends a structured message into the session (see `diagnosis.json`, `outcome` field); `delegate` calls this automatically |
 | `accept <id>` | squash-merge a worktree task's branch into the repo's current branch, then remove the branch/worktree |
 | `discard <id>` | drop a worktree task's branch/worktree without merging |
 | `agents` | alias for `agent agent list` |
@@ -403,7 +403,7 @@ no changes, or the auto-commit couldn't execute (verify manually:
 ## Failure Diagnosis (`diagnosis.json`)
 
 On a non-success outcome (`validation_error`, `permission_rejected`,
-`abandoned`, `error`, `no_events`), `agent.js finalize` writes
+`abandoned`, `output_limit`, `error`, `no_events`), `agent.js finalize` writes
 `diagnosis.json` into the task directory:
 
 ```json
@@ -419,7 +419,7 @@ On a non-success outcome (`validation_error`, `permission_rejected`,
 }
 ```
 
-- `outcome` — `success | validation_error | permission_rejected | abandoned | error | no_events`
+- `outcome` — `success | validation_error | permission_rejected | abandoned | output_limit | error | no_events`
 - `toolCalls` — all tool invocations with their statuses and errors
 - `lastErrorMessage` — text of the last error
 - `textAfterLastError` — what the model wrote after the error (if it tried to self-repair)

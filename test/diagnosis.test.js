@@ -160,3 +160,35 @@ test('buildDiagnosis — textAfterLastError', () => {
 if (!process.exitCode) {
   console.log('\ndiagnosis: OK');
 }
+
+// Claude Code: ответ оборван лимитом выходных токенов
+const outputLimitEvents = [
+  { type: 'assistant', message: { content: [{ type: 'text', text: 'пишу файл' }] } },
+  {
+    type: 'result',
+    is_error: true,
+    api_error: 'max_output_tokens',
+    terminal_reason: 'api_error',
+    result: "API Error: Claude's response exceeded the 32000 output token maximum.",
+  },
+];
+
+test('output_limit — result.api_error=max_output_tokens', () => {
+  assert.strictEqual(classifyOutcome(outputLimitEvents), 'output_limit');
+});
+
+test('output_limit — lastErrorMessage берётся из result', () => {
+  const d = buildDiagnosis(outputLimitEvents, {});
+  assert.strictEqual(d.outcome, 'output_limit');
+  assert.ok(d.lastErrorMessage.includes('32000 output token maximum'));
+});
+
+test('error — result.is_error без max_output_tokens', () => {
+  const ev = [{ type: 'result', is_error: true, api_error: 'overloaded', result: 'API Error' }];
+  assert.strictEqual(classifyOutcome(ev), 'error');
+});
+
+test('success — result без is_error остаётся success', () => {
+  const ev = [{ type: 'result', is_error: false, result: 'готово' }];
+  assert.strictEqual(classifyOutcome(ev), 'success');
+});
