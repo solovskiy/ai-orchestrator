@@ -19,8 +19,8 @@ Bash (`run_in_background: true`) — тогда харнесс сам пришл
 
 ```bash
 # agent agents — сверить ростер и уровни один раз за сессию (не хардкодить).
-# Рабочий агент один — `general`; другие (browser, testing) — только если
-# нужен их MCP. «Сложность» задаёт уровень --tier light|medium|heavy:
+# Рабочий агент один — `general`. «Сложность» задаёт уровень
+# --tier light|medium|heavy:
 #   light  — поиск, факты, мелочи;  medium (по умолчанию) — обычная работа;
 #   heavy  — сложный код, сам работает в worktree (потом agent accept/discard).
 # Какая модель за уровнем — в lib/tiers.json, не запоминать.

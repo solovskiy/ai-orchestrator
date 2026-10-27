@@ -44,12 +44,10 @@ agent delegate general --prompt-file tz.md --tier heavy --verify "npm test" --re
 `delegate` ждёт по умолчанию 1800 с (`--timeout`) — по истечении он
 просто перестаёт ждать, сама задача продолжает идти (`agent status`).
 
-Остальные агенты остаются там, где нужны свои MCP-серверы или другой
-исполнитель: `browser` (настоящий браузер), `testing` (agent-browser).
-`research`, `coding`, `copywriter` — прежние специализированные
-агенты, пока не удалены (по ним могут быть незакрытые задачи и сессии),
-но для новых задач их не выбирай: бери `general` с нужным уровнем.
-У агентов без уровней `--tier` не принимается.
+Других агентов в ротере нет — `general` единственный. Если задаче нужен
+свой MCP-сервер или отдельный исполнитель — создай нового агента
+(`agent agent create <name>`, JSON в `agents/`), не подгоняй `general`.
+Агенты без уровней `--tier` не принимают — уровни есть только у `general`.
 
 Имя агента подставляет модель/worktree/permissions/systemPrompt по
 умолчанию из `agents/<name>.json` — не нужно помнить конкретное имя
@@ -104,27 +102,7 @@ agent delegate general --prompt-file tz.md --tier heavy --verify "npm test" --re
 Web-источники или трассировка кода/архитектуры в локальном репозитории —
 один и тот же агент `general` (описывай предметную область прямо в
 задаче), та же логика «3+ источника/файла — делегировать», просто
-предметная область разная. Задачи внутри настоящего браузера (сбор данных с сайтов,
-где нужна авторизованная сессия/клики/скриншоты, а не просто HTTP-запрос)
-→ агент `browser` — работает через MCP browser-bot (Real Browser MCP,
-порт 9333, расширение в отдельном Chrome-профиле бота); перед первым
-использованием на новой машине нужна разовая ручная настройка профиля
-(`.ai/scripts/browser-preflight.ps1` поднимает профиль и освобождает
-порт, но установка расширения и логин на сайтах — руками).
-
-Проверка своего/локального dev-сервера (поднять, открыть в браузере,
-снять скриншот/accessibility-snapshot, отчитаться) → агент `testing` —
-работает через MCP `agent-browser` (vercel-labs/agent-browser, свой
-Chrome-профиль/daemon через CDP, не пересекается с профилем `browser`).
-Отдельный от `browser` MCP и агент осознанно: `browser` — авторизованные
-сессии на реальных сайтах, `testing` — dev-сервер/фронтенд-ревью текущего
-проекта. Требует разовой установки самого MCP-сервера на машине
-(`npm install -g agent-browser && agent-browser install`) — это не
-делает `.ai`, нужно руками до первого использования.
-
-Модель у `testing` должна уметь смотреть на изображения (скриншоты) —
-проверь `agent agent show testing`, дефолт может быть плейсхолдером,
-если модель ещё не подобрана.
+предметная область разная.
 
 Модель берётся из `agents/<name>.json` — она настроена пользователем через
 UI и отражает актуальный выбор, доверяй ей, не переопределяй `--model`
@@ -156,9 +134,8 @@ rate-limit бесплатного тира (симптом: `abandoned`/`validat
 
 ## Writing agent system prompts — practical gotchas
 
-Discovered during the `testing` agent development but applicable to ANY
-MCP-using agent. These are NOT specific to `testing` — every new agent that
-uses an MCP server should follow them.
+Общие советы для любого агента, использующего MCP-сервер, — не только
+для конкретного агента.
 
 ### 1. MCP tool names double the server prefix
 
@@ -180,7 +157,7 @@ rely on the model to infer naming conventions.
 spawned server process inherits open pipes from the bash invocation and
 keeps them open indefinitely (the server never exits), so the caller blocks
 on `read()` waiting for EOF that never comes. This is the single most common
-cause of hangs in `testing` agent tasks.
+cause of hangs in MCP-using agent tasks.
 
 Always use `nohup <command> > file.log 2>&1 &` in system prompts for any
 agent that needs to start a background server. Log files go inside the

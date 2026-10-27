@@ -56,8 +56,8 @@ agent — делегирование задач фоновым CLI-агента�
   agent agents                                           список агентов (имя/модель/worktree/инструменты)
 
 Примеры:
-  agent delegate research "изучи X, сохрани отчёт в X.md"
-  agent delegate coding "реализуй Y по образцу Z" --verify "npm test"
+  agent delegate general "изучи X, сохрани отчёт в X.md" --tier light
+  agent delegate general "реализуй Y по образцу Z" --tier heavy --verify "npm test"
   agent list
   agent status rozetka-ui-20260726-140000-42-ab12
   agent accept rozetka-ui-20260726-140000-42-ab12

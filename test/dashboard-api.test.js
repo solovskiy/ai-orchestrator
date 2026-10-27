@@ -110,19 +110,18 @@ async function runTests() {
     assert.strictEqual(r.status, 200);
     assert.ok(Array.isArray(r.json), 'должен быть массивом');
     const names = r.json.map(a => a.name);
-    assert.ok(names.includes('coding'), `должен быть coding среди: ${names.join(', ')}`);
-    assert.ok(names.includes('research'), `должен быть research среди: ${names.join(', ')}`);
-    const coding = r.json.find(a => a.name === 'coding');
-    assert.ok(coding.model, 'у агента должна быть модель');
-    assert.strictEqual(coding.worktree, true, 'coding должен быть worktree');
-    assert.ok(coding.permissions, 'должны быть permissions');
-    assert.ok(typeof coding.running === 'number', 'running должен быть числом');
+    assert.ok(names.includes('general'), `должен быть general среди: ${names.join(', ')}`);
+    const general = r.json.find(a => a.name === 'general');
+    assert.ok(general.model, 'у агента должна быть модель');
+    assert.strictEqual(general.worktree, false, 'general вне worktree (worktree включается уровнем heavy)');
+    assert.ok(general.permissions, 'должны быть permissions');
+    assert.ok(typeof general.running === 'number', 'running должен быть числом');
   });
 
-  await test('GET /api/agents/coding — возвращает одного агента', async () => {
-    const r = await get('/api/agents/coding');
+  await test('GET /api/agents/general — возвращает одного агента', async () => {
+    const r = await get('/api/agents/general');
     assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.json.name, 'coding');
+    assert.strictEqual(r.json.name, 'general');
     assert.ok(r.json.model, 'должна быть модель');
     assert.ok(r.json.systemPrompt, 'должен быть systemPrompt');
     assert.ok(r.json.permissions, 'должны быть permissions');
@@ -363,7 +362,7 @@ async function runTests() {
       const r = await get('/api/agents');
       assert.strictEqual(r.status, 200);
       const names = r.json.map(a => a.name);
-      assert.ok(names.includes('coding') && names.includes(guardName), `список: ${names.join(', ')}`);
+      assert.ok(names.includes('general') && names.includes(guardName), `список: ${names.join(', ')}`);
       assert.ok(!names.includes('test-api-broken'));
     });
 
@@ -375,8 +374,8 @@ async function runTests() {
 
   // ---------------------------------------------------------------- agent export
 
-  await test('GET /api/agents/coding/export — возвращает markdown', async () => {
-    const r = await get('/api/agents/coding/export');
+  await test('GET /api/agents/general/export — возвращает markdown', async () => {
+    const r = await get('/api/agents/general/export');
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.headers['content-type'], 'text/markdown; charset=utf-8');
     assert.ok(r.body.startsWith('---'), `должен начинаться с YAML frontmatter: ${r.body.slice(0, 50)}`);

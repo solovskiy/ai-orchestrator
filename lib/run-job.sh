@@ -56,30 +56,6 @@ jset status=running "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 START_COMMIT="$(cd "$CWD" && git rev-parse HEAD 2>/dev/null)" || true
 [[ -n "$START_COMMIT" ]] && jset "startCommit=$START_COMMIT"
 
-# --- изоляция браузерной сессии agent-browser ---
-# Без этого все задачи делят один демон/Chromium сессии `default`: параллельные
-# джобы дерутся за него, а брошенный процесс от прошлой задачи заставляет
-# следующую висеть до таймаута на мёртвом CDP-соединении.
-export AGENT_BROWSER_SESSION="$(basename "$JOB_DIR")"
-
-# Прогрев ОБЯЗАТЕЛЕН: холодный запуск демона+Chrome через сам CLI занимает
-# 2-4с и надёжен. Тот же самый холодный запуск, если его первым делает MCP-
-# подкоманда agent-browser внутри opencode (вложенный spawn cmd/c → node →
-# демон), на Windows виснет НАВСЕГДА без единой строки в stderr (баг
-# детачмента демона под вложенным процессом — проверено вручную, тёплая
-# MCP-сессия отвечает нормально). Поэтому session должна стать тёплой ДО
-# того, как её тронет MCP-слой — не убирать этот шаг, даже если кажется
-# лишним «дополнительным» вызовом.
-if command -v agent-browser >/dev/null 2>&1; then
-  # ВАЖНО: cd в $CWD обязателен — agent-browser резолвит относительные пути
-  # (--path у screenshot и т.п.) от cwd процесса, который его прогрел/держит
-  # демон. Без явного cd здесь демон получает cwd самого run-job.sh, а не
-  # репозитория задачи — задача в другом репозитории (не .ai) получает
-  # «Системе не удается найти указанный путь» на сохранении скриншота
-  # (найдено на testing-smoke-plumb, --repo plumb_tools).
-  ( cd "$CWD" && timeout 30 agent-browser open about:blank >/dev/null 2>&1 ) || true
-fi
-
 # --- собственно агент: stdout -> JSONL, stderr отдельно ---
 cd "$CWD" || true
 "${ARGS[@]}" > "$JOB_DIR/out.jsonl" 2> "$JOB_DIR/stderr.log" &

@@ -57,12 +57,12 @@ test('поле, которого нет в уровне, остаётся от �
 });
 
 test('агент без уровней: настройки как есть, tier пустой', () => {
-  const r = resolveTier('research', { model: 'p/r', variant: 'low', worktree: true }, '', CFG);
+  const r = resolveTier('no-tier-agent', { model: 'p/r', variant: 'low', worktree: true }, '', CFG);
   assert.deepStrictEqual(r, { tier: '', model: 'p/r', variant: 'low', worktree: true });
 });
 
 test('--tier у агента без уровней — ошибка с перечнем агентов', () => {
-  assert.throws(() => resolveTier('research', AGENT, 'heavy', CFG), /research не поддерживает --tier.*general/);
+  assert.throws(() => resolveTier('no-tier-agent', AGENT, 'heavy', CFG), /no-tier-agent не поддерживает --tier.*general/);
 });
 
 test('неизвестный уровень — ошибка с перечнем доступных', () => {
@@ -100,6 +100,23 @@ function readAgent(args) {
   return { code: res.status, out: res.stdout.split('\n'), err: res.stderr.trim() };
 }
 
+// Временный агент без уровней: с ростером из одного general реального
+// агента без --tier не осталось, поэтому CLI-тесты используют фикстуру.
+const NOTIER = 'fixture-notier';
+const NOTIER_FILE = path.join(__dirname, '..', 'agents', NOTIER + '.json');
+
+function withNotierFixture(fn) {
+  fs.writeFileSync(NOTIER_FILE, JSON.stringify({
+    name: NOTIER,
+    runner: '',
+    model: 'claude-ds/x',
+    variant: 'low',
+    worktree: false,
+  }, null, 2));
+  try { fn(); }
+  finally { fs.rmSync(NOTIER_FILE, { force: true }); }
+}
+
 test('agent-read general --tier heavy: 5 строк, worktree=1, уровень в конце', () => {
   const r = readAgent(['general', 'heavy']);
   assert.strictEqual(r.code, 0, r.err);
@@ -114,16 +131,20 @@ test('agent-read general без уровня → defaultTier', () => {
   assert.strictEqual(r.out[4], loadTiers().defaultTier);
 });
 
-test('agent-read research без уровня: 5-я строка пустая', () => {
-  const r = readAgent(['research']);
-  assert.strictEqual(r.code, 0, r.err);
-  assert.strictEqual(r.out[4], '');
+test('agent-read агента без уровней: 5-я строка пустая', () => {
+  withNotierFixture(() => {
+    const r = readAgent([NOTIER]);
+    assert.strictEqual(r.code, 0, r.err);
+    assert.strictEqual(r.out[4], '');
+  });
 });
 
-test('agent-read research --tier light → код 1 и понятная причина', () => {
-  const r = readAgent(['research', 'light']);
-  assert.strictEqual(r.code, 1);
-  assert.match(r.err, /не поддерживает --tier/);
+test('agent-read агента без уровней --tier light → код 1 и понятная причина', () => {
+  withNotierFixture(() => {
+    const r = readAgent([NOTIER, 'light']);
+    assert.strictEqual(r.code, 1);
+    assert.match(r.err, /не поддерживает --tier/);
+  });
 });
 
 // ------------------------------------------------------- variant → claude --effort

@@ -86,6 +86,36 @@ function startServer() {
   });
 }
 
+// ---------------------------------------------------------- фикстура агента
+
+// С ростером из одного general нужен второй агент для путей, которые обходят
+// уровни: у general модель/worktree перекрываются уровнями из lib/tiers.json,
+// а фикстура без уровней отдаёт поля файла как есть.
+const FIXTURE = 'fixture-read';
+const FIXTURE_FILE = path.join(AGENTS_DIR, FIXTURE + '.json');
+const FIXTURE_DEPLOY = path.join(__dirname, '..', '.opencode', 'agents', FIXTURE + '.md');
+
+function writeFixture() {
+  fs.writeFileSync(FIXTURE_FILE, JSON.stringify({
+    name: FIXTURE,
+    runner: '',
+    model: 'claude-ds/x',
+    variant: 'low',
+    mode: 'primary',
+    worktree: true,
+    autoCommit: false,
+    timeout: 1800,
+    description: 'Test fixture (без уровней)',
+    systemPrompt: 'Тест',
+    permissions: { bash: 'allow', read: 'allow' },
+  }, null, 2));
+}
+
+function removeFixture() {
+  fs.rmSync(FIXTURE_FILE, { force: true });
+  fs.rmSync(FIXTURE_DEPLOY, { force: true });
+}
+
 // ---------------------------------------------------------- основное
 
 async function run() {
@@ -93,9 +123,9 @@ async function run() {
   const env = { AI_DASHBOARD_URL: url };
 
   try {
-    // --- Тест 1: agent-read читает из дашборда (реальный агент research) ---
-    await test('agent-read через дашборд: research → model/variant/worktree/runner', () => {
-      const out = agent(['agent-read', 'research'], env);
+    // --- Тест 1: agent-read читает из дашборда (реальный агент general) ---
+    await test('agent-read через дашборд: general → model/variant/worktree/runner', () => {
+      const out = agent(['agent-read', 'general'], env);
       const lines = out.split('\n');
       assert.ok(lines.length >= 4, `должно быть 4 строки, получили ${lines.length}: ${out}`);
 
@@ -109,37 +139,31 @@ async function run() {
       assert.ok(worktree === '0' || worktree === '1', `worktree должно быть 0/1: ${worktree}`);
       // variant может быть null/пустым — проверяем инвариант (поле присутствует и это строка)
       assert.strictEqual(typeof variant, 'string', `variant должен быть строкой в выводе (получено: ${typeof variant})`);
-      // runner — может быть пустым (auto-detected из model; research.json не задаёт его явно)
+      // runner — может быть пустым (auto-detected из model; general.json не задаёт его явно)
     });
 
-    // --- Тест 2: agent-read читает из дашборда (coding) ---
-    await test('agent-read через дашборд: coding → worktree=1', () => {
-      const out = agent(['agent-read', 'coding'], env);
+    // --- Тест 2: agent-read читает из дашборда (фикстура с worktree=1) ---
+    await test('agent-read через дашборд: фикстура без уровней → worktree=1', () => {
+      writeFixture();
+      const out = agent(['agent-read', FIXTURE], env);
       const lines = out.split('\n');
-      assert.strictEqual(lines[1], '1', `coding должен иметь worktree=1: ${out}`);
+      assert.strictEqual(lines[1], '1', `фикстура должна иметь worktree=1: ${out}`);
     });
 
     // --- Тест 3: изменение модели через дашборд подхватывается ---
-    await test('PUT /api/agents/research (меняем model) → agent-read видит изменения', async () => {
-      // Сохраняем оригинальный конфиг research
-      const researchFile = path.join(AGENTS_DIR, 'research.json');
-      const original = fs.readFileSync(researchFile, 'utf8');
-
-      // Сохраняем деплоенный .opencode/agents/research.md (побочный эффект apiSave)
-      const deployFile = path.join(__dirname, '..', '.opencode', 'agents', 'research.md');
-      const deployOriginal = fs.existsSync(deployFile) ? fs.readFileSync(deployFile, 'utf8') : null;
-
+    await test('PUT /api/agents/fixture-read (меняем model) → agent-read видит изменения', async () => {
+      writeFixture();
       try {
         const newModel = 'deepseek/deepseek-v4-flash-changed';
 
         // Меняем модель через API дашборда
-        const res = await httpPut(`${url}/api/agents/research`, {
-          name: 'research',
-          description: 'Research agent (тест)',
+        const res = await httpPut(`${url}/api/agents/${FIXTURE}`, {
+          name: FIXTURE,
+          description: 'Test fixture agent',
           mode: 'primary',
           model: newModel,
           variant: 'low',
-          worktree: false,
+          worktree: true,
           timeout: 1800,
           autoCommit: false,
           systemPrompt: 'Тест',
@@ -149,25 +173,17 @@ async function run() {
         assert.strictEqual(res.json.ok, true);
 
         // agent-read должен вернуть новую модель
-        const out = agent(['agent-read', 'research'], env);
+        const out = agent(['agent-read', FIXTURE], env);
         const lines = out.split('\n');
         assert.strictEqual(lines[0], newModel, `agent-read вернул модель "${lines[0]}" вместо "${newModel}"`);
       } finally {
-        // Восстанавливаем оригинальный конфиг
-        fs.writeFileSync(researchFile, original);
-
-        // Восстанавливаем деплоенный .opencode/agents/research.md
-        if (deployOriginal === null) {
-          try { fs.unlinkSync(deployFile); } catch { /* файла не было — ок */ }
-        } else {
-          fs.writeFileSync(deployFile, deployOriginal);
-        }
+        removeFixture();
       }
     });
 
     // --- Тест 4: fallback на локальный файл при недоступности дашборда ---
     await test('agent-read с невалидным AI_DASHBOARD_URL → fallback на локальный файл', () => {
-      const out = agent(['agent-read', 'research'], { AI_DASHBOARD_URL: 'http://127.0.0.1:19999' });
+      const out = agent(['agent-read', 'general'], { AI_DASHBOARD_URL: 'http://127.0.0.1:19999' });
       const lines = out.split('\n');
       assert.ok(lines[0], 'model должна быть считана (из локального файла)');
       assert.ok(lines[0].includes('/'), `model должна содержать /: ${lines[0]}`);
@@ -190,13 +206,14 @@ async function run() {
       // Для этого теста нужен сервер, возвращающий мусор.
       // Наш настоящий сервер не возвращает мусор, но можно проверить фоллбэк,
       // указав неверный порт дашборда (вернёт connection error → fallback).
-      const out = agent(['agent-read', 'research'], { AI_DASHBOARD_URL: 'http://127.0.0.1:1' });
+      const out = agent(['agent-read', 'general'], { AI_DASHBOARD_URL: 'http://127.0.0.1:1' });
       const lines = out.split('\n');
       assert.ok(lines[0].includes('/'), `должна быть валидная model из локального файла: ${lines[0]}`);
     });
 
   } finally {
     srv.close();
+    removeFixture();
   }
 
   console.log(`\nпройдено: ${passed}, провалено: ${failed}`);

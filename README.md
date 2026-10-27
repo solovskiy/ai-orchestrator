@@ -7,7 +7,7 @@ The folder is self-contained: no paths point outside, state lives inside. The
 directory can be copied to another machine in its entirety.
 
 This file covers "how" (commands, `--verify`, writing specs). "When and what" to
-delegate (research vs. coding criteria, NEVER/ASK/ALWAYS, hung-task
+delegate (tier choice criteria, NEVER/ASK/ALWAYS, hung-task
 troubleshooting) — [`docs/workflow.md`](docs/workflow.md).
 
 ## Requirements
@@ -111,14 +111,14 @@ background Bash (`run_in_background: true`) — the harness itself will send a
 completion notification.
 
 ```bash
-# Positional form: agent delegate <agent> "<prompt>" — the agent name
-# substitutes model/worktree from agents/coding.json; don't memorize the
+# Positional form: agent delegate general "<prompt>" — the --tier level
+# substitutes model/variant/worktree from lib/tiers.json; don't memorize the
 # concrete model, it's configured in the dashboard/JSON and can change —
-# the current one is `agent agent show coding` (see "Capability / Agent" below).
+# the current one is shown by `agent agents` (see "Capability / Agent" below).
 # --verify should set up the environment itself, otherwise the first run in a fresh
 # worktree is guaranteed to fail on "Cannot find module" across the whole
 # project, not just the agent's files (see "Before --verify" below).
-agent delegate coding \
+agent delegate general --tier heavy \
   --repo /d/work/vodovorot/server/erp_core \
   --verify "npm install --prefer-offline --no-audit --no-fund && npm run typecheck && npm test" \
   --prompt-file tz.md
@@ -178,8 +178,8 @@ shows only the everyday subset: `delegate`, `list`, `status`, `result`,
 
 ## Branches: accept / discard / gc
 
-A worktree task (any agent with `worktree: true`, e.g. `coding`) commits
-into its own branch/worktree (`agent/<task>-<id>`, unique per task — no
+A worktree task (e.g. `general` with `--tier heavy`, or `--worktree`)
+commits into its own branch/worktree (`agent/<task>-<id>`, unique per task — no
 slug collisions). `delegate` closes the loop automatically at the end:
 
 - **No commits and a clean worktree** — it removes the branch/worktree
@@ -218,10 +218,10 @@ alias) on `start` and `delegate` substitutes
 model/worktree/variant/permissions/systemPrompt from `agents/<name>.json`
 — `.ai`'s canonical JSON format.
 
-The agent roster is not fixed in this README and is not hardcoded — it grows
-(as of 2026-09-26: `research`, `browser`, `testing`, `coding`,
-`copywriter`); the current list with
-model/worktree/tools — a command, not a table:
+The agent roster is not fixed in this README and is not hardcoded — the
+working agent is `general` with `--tier light|medium|heavy` (as of
+2026-10-27: the only agent; earlier specialized agents were removed); the
+current list with model/worktree/tools — a command, not a table:
 
 ```bash
 agent agents                # name, model, worktree yes/no, tools (= agent agent list)
@@ -231,7 +231,7 @@ agent agent create <name>   # create a new agent (scaffold in agents/<name>.json
 agent agent delete <name>   # remove an agent (agents/<name>.json)
 ```
 
-### Browser agents (two independent, do not confuse)
+### Tiers
 
 **Tiers.** The working agent is `general`; how strong a model it gets is chosen
 with `--tier light|medium|heavy` (config: `lib/tiers.json` — model, variant and
@@ -244,40 +244,12 @@ print a single JSON line (`ok`, `done`, `errorCode`, `result`, `worktree.accept/
 (`WAIT_TIMEOUT`). Error codes are stable (`START_FAILED`, `VERIFY_FAILED`,
 `PERMISSION_REJECTED`, `RUNNER_FAILED`, …) — see `classifyJobError` in `lib/agent.js`.
 
-Two agents provide browser access through different MCP servers for different
-use cases. Both are `worktree: false` — read the project, write a report,
-never touch code or git.
-
-| Agent | MCP server | Browser | Port | For |
-|---|---|---|---|---|
-| `browser` | `browser-bot` (Real Browser MCP) | User's personal Chrome (profile `chrome-bot-profile`, saved logins) | ws://9333 | Visiting sites "as yourself" — forms, comments, data behind login |
-| `testing` | `agent-browser` (vercel-labs) | Headless Chromium (self-installed, self-launched, zero relation to personal browser) | none | Dev/frontend checks: start server → open → screenshot/snapshot → close |
-
-Each now has an explicit `"mcp": [...]` field in its JSON — exactly one
-server. `deploy-agent.js` converts it to `tools:` globs that opencode
+An agent may carry an explicit `"mcp": [...]` field in its JSON (`general` has
+`context7`). `deploy-agent.js` converts it to `tools:` globs that opencode
 actually understands (the `mcp` field in opencode markdown frontmatter is
 silently ignored — `lib/deploy-agent.js` reads known MCP servers from
 `~/.config/opencode/opencode.json`, generates `tools:` with allow for the
-listed server and deny for every other known server). Before this fix,
-`browser` could see all MCP servers including `agent-browser` — an
-accidental mix-up.
-
-The `agent-browser` MCP server has a cold-start hang on Windows: when the
-daemon is not yet running, the first MCP tool call spawns a child CLI
-process — on Windows this hits a handle-inheritance bug (upstream
-`vercel-labs/agent-browser#1408`, open PR at time of writing) where the
-daemon process keeps a duplicate of the MCP layer's stdout pipe open
-forever, so `read_to_end()` never sees EOF. Workaround in `lib/run-job.sh`:
-the CLI `agent-browser open about:blank` is called before starting the
-agent (wrapped in `timeout 30 ... || true`) — this warms up the session so
-the daemon is already alive when the MCP layer touches it. Cold MCP:
-infinite hang. Warm MCP: ~60ms. The same call through bare CLI works fine
-(2-4s) — no intermediate pipe reading there.
-
-Agent-browser sessions are isolated per job via
-`AGENT_BROWSER_SESSION=$(basename "$JOB_DIR")` in `run-job.sh` — without
-this, parallel tasks share one daemon and fight over it, and an orphaned
-process from a previous task hangs the next one on a dead CDP connection.
+listed server and deny for every other known server).
 
 General rule about `worktree` (independent of the specific name): `no` —
 agent only reads and writes a report, `--repo` can be any folder;
@@ -348,9 +320,9 @@ and codex cannot read the output (Codex CLI does not emit a JSON stream).
   jobs/<jobId>/          job.json · prompt.md · out.jsonl · result.md · verify.log · diagnosis.json
 ```
 
-Research agent reports do not land here — they are saved in
+Agent research reports do not land here — they are saved in
 `ai-research/` at the root of the **target project** (`--repo`), not inside
-`.ai` (see "Where research agents save reports" below).
+`.ai` (see "Where reports are saved" below).
 
 Three principles everything rests on:
 
@@ -388,7 +360,7 @@ there" — the worktree does not inherit it.
 
 ## Auto-Commit in Worktree
 
-If a task is launched with a worktree (`--agent coding` or `--worktree`),
+If a task is launched with a worktree (`--tier heavy` or `--worktree`),
 the `run-job.sh` wrapper automatically commits uncommitted changes at the
 end — in case the model forgot to `git commit` itself.
 The commit message is generated from `task`, `model`, and the first lines of
@@ -465,7 +437,7 @@ a ready-made answer — then it would have been cheaper to do it yourself.
   the orchestrator's own research.
 - **Specify what's cheaper to say than to rediscover**: which pattern to
   follow (a sample file, not its content), report format/structure for a
-  research agent, acceptance criteria ("tests green", "report contains X, Y,
+  research task, acceptance criteria ("tests green", "report contains X, Y,
   Z"), explicit scope constraints ("don't touch migrations").
 - A sign the spec is too detailed: if you could rewrite the prompt as a
   ready-made diff/report text — the executor is unnecessary, the savings
@@ -477,8 +449,8 @@ a ready-made answer — then it would have been cheaper to do it yourself.
   paths, references to uncommitted files, silently giving up on the first
   error, trusting `verify: passed` without a diff.
 
-**Where research agents save reports** — already fixed in their
-`systemPrompt` (`agents/research.json`): always
+**Where reports are saved** — already fixed in `general`'s
+`systemPrompt` (`agents/general.json`): always
 `ai-research/<file>.md` at the root of the target `--repo`; the folder is
 created by the agent itself. There's no need to specify the path in the
 spec — this is the case where a convention saves a line in every prompt. If

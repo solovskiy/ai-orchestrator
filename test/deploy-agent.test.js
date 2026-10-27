@@ -172,8 +172,8 @@ test('toOpenCodeMd — минимальный агент', () => {
 
 test('toOpenCodeMd — агент с permissions', () => {
   const agent = {
-    name: 'coding',
-    description: 'кодинг-агент',
+    name: 'general',
+    description: 'универсальный агент',
     model: 'deepseek/deepseek-v4-pro',
     systemPrompt: 'Пиши код.',
     permissions: { bash: 'allow', read: 'allow', edit: 'allow', webfetch: 'deny' },
