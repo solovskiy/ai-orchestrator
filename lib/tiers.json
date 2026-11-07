@@ -1,22 +1,49 @@
 {
   "defaultTier": "medium",
-  "agents": ["general"],
+  "runner": "claude-ds",
+  "agents": [
+    "general"
+  ],
   "tiers": {
     "light": {
       "description": "Лёгкий: поиск, сбор фактов, мелкие правки. Дешёвая быстрая модель, только чтение/мелочи в самом репо.",
-      "model": "claude-ds/deepseek-v4-flash",
-      "variant": "low"
+      "runners": {
+        "opencode": {
+          "model": "opencode-go/deepseek-v4.1-flash",
+          "variant": "minimal"
+        },
+        "claude-ds": {
+          "model": "claude-ds/deepseek-v4-pro",
+          "variant": "minimal"
+        }
+      }
     },
     "medium": {
       "description": "Средний (по умолчанию): обычная работа — разобраться в модуле, написать функцию, ресёрч, доки.",
-      "model": "claude-ds/deepseek-v4-pro",
-      "variant": "medium"
+      "runners": {
+        "opencode": {
+          "model": "opencode-go/deepseek-v4.1-flash",
+          "variant": "medium"
+        },
+        "claude-ds": {
+          "model": "claude-ds/deepseek-v4-flash",
+          "variant": "medium"
+        }
+      }
     },
     "heavy": {
       "description": "Тяжёлый: сложный код и трудные баги. Сильная модель, больше размышлений, работает в отдельном worktree (потом agent accept/discard).",
-      "model": "claude-ds/deepseek-v4-pro",
-      "variant": "high",
-      "worktree": true
+      "worktree": true,
+      "runners": {
+        "opencode": {
+          "model": "opencode-go/deepseek-v4-pro",
+          "variant": "medium"
+        },
+        "claude-ds": {
+          "model": "claude-ds/deepseek-v4-pro",
+          "variant": "medium"
+        }
+      }
     }
   }
 }

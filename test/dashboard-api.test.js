@@ -935,6 +935,112 @@ async function runTests() {
     assert.ok(Array.isArray(r.json.jobs), 'HTTP API должен работать после WebSocket disconnect');
   });
 
+  // ------------------------------------------------ раннер уровней (tiers.json)
+  // createServer() пишет в настоящий lib/tiers.json — исходное содержимое
+  // сохраняем и возвращаем в finally.
+  const tiersFile = path.join(__dirname, '..', 'lib', 'tiers.json');
+  const tiersBackup = fs.readFileSync(tiersFile, 'utf8');
+  try {
+    const orig = JSON.parse(tiersBackup);
+    const names = Object.keys(orig.tiers.light.runners);
+    const other = names.find(n => n !== orig.runner);
+
+    await test('GET /api/tier-runner: активный раннер, список раннеров и модели по уровням', async () => {
+      const r = await get('/api/tier-runner');
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.json.runner, orig.runner);
+      assert.deepStrictEqual(r.json.runners.map(x => x.name).sort(), names.slice().sort());
+      const cur = r.json.runners.find(x => x.name === orig.runner);
+      assert.strictEqual(cur.tiers.light.model, orig.tiers.light.runners[orig.runner].model);
+      assert.ok(cur.label, 'у раннера должна быть подпись для UI');
+    });
+
+    await test('POST /api/tier-runner: переключает раннер, пишет tiers.json и сохраняет остальные поля', async () => {
+      assert.ok(other, 'для теста нужно минимум два раннера в tiers.json');
+      const r = await req('POST', '/api/tier-runner', { runner: other });
+      assert.strictEqual(r.status, 200, r.body);
+      assert.strictEqual(r.json.runner, other);
+      const saved = JSON.parse(fs.readFileSync(tiersFile, 'utf8'));
+      assert.strictEqual(saved.runner, other);
+      assert.deepStrictEqual(saved.tiers, orig.tiers, 'уровни не должны меняться');
+      assert.strictEqual(saved.defaultTier, orig.defaultTier);
+      assert.deepStrictEqual(saved.agents, orig.agents);
+      const left = fs.readdirSync(path.dirname(tiersFile)).filter(f => f.includes('.tmp-'));
+      assert.deepStrictEqual(left, [], 'временный файл не должен оставаться');
+    });
+
+    await test('POST /api/tier-runner: неизвестный раннер → 400, файл не меняется', async () => {
+      const before = fs.readFileSync(tiersFile, 'utf8');
+      const r = await req('POST', '/api/tier-runner', { runner: 'no-such-runner' });
+      assert.strictEqual(r.status, 400);
+      assert.match(r.json.error, /недоступен/);
+      assert.strictEqual(fs.readFileSync(tiersFile, 'utf8'), before);
+    });
+
+    await test('GET /api/tier-runner: у раннеров есть каталог моделей (claude-ds — свой, opencode — null) и описания уровней', async () => {
+      const r = await get('/api/tier-runner');
+      const ds = r.json.runners.find(x => x.name === 'claude-ds');
+      assert.ok(ds.models.includes('claude-ds/deepseek-v4-pro'), 'в каталоге claude-ds нет deepseek-v4-pro');
+      assert.strictEqual(r.json.runners.find(x => x.name === 'opencode').models, null);
+      assert.strictEqual(r.json.tiers.heavy.worktree, true);
+      assert.ok(r.json.tiers.light.description);
+    });
+
+    await test('POST /api/tiers/:name: меняет модель и мышление выбранного раннера, чужой раннер и уровни не трогает', async () => {
+      const fresh = JSON.parse(fs.readFileSync(tiersFile, 'utf8'));
+      const act = fresh.runner;
+      const model = act === 'claude-ds' ? 'claude-ds/deepseek-v4-flash' : 'opencode-go/deepseek-v4-pro';
+      const r = await req('POST', '/api/tiers/light', { model, variant: 'max' });
+      assert.strictEqual(r.status, 200, r.body);
+      const saved = JSON.parse(fs.readFileSync(tiersFile, 'utf8'));
+      assert.deepStrictEqual(saved.tiers.light.runners[act], { model, variant: 'max' });
+      for (const n of names.filter(x => x !== act)) {
+        assert.deepStrictEqual(saved.tiers.light.runners[n], orig.tiers.light.runners[n], 'блок неактивного раннера изменился');
+      }
+      assert.deepStrictEqual(saved.tiers.medium, fresh.tiers.medium);
+      assert.deepStrictEqual(saved.tiers.heavy, fresh.tiers.heavy);
+      assert.strictEqual(r.json.runners.find(x => x.name === act).tiers.light.variant, 'max');
+    });
+
+    await test('POST /api/tiers/:name: только variant — модель остаётся; пустой variant допустим', async () => {
+      const before = JSON.parse(fs.readFileSync(tiersFile, 'utf8'));
+      const act = before.runner;
+      const r = await req('POST', '/api/tiers/medium', { variant: '' });
+      assert.strictEqual(r.status, 200, r.body);
+      const saved = JSON.parse(fs.readFileSync(tiersFile, 'utf8'));
+      assert.strictEqual(saved.tiers.medium.runners[act].variant, '');
+      assert.strictEqual(saved.tiers.medium.runners[act].model, before.tiers.medium.runners[act].model);
+    });
+
+    await test('POST /api/tiers/:name: неверные значения и неизвестный уровень отклоняются, файл не меняется', async () => {
+      const before = fs.readFileSync(tiersFile, 'utf8');
+      const act = JSON.parse(before).runner;
+      const wrongModel = act === 'claude-ds' ? 'opencode-go/x' : 'claude-ds/deepseek-v4-pro';
+      assert.strictEqual((await req('POST', '/api/tiers/ultra', { variant: 'low' })).status, 404);
+      assert.strictEqual((await req('POST', '/api/tiers/light', { variant: 'turbo' })).status, 400);
+      assert.strictEqual((await req('POST', '/api/tiers/light', { model: 'без слеша' })).status, 400);
+      assert.strictEqual((await req('POST', '/api/tiers/light', { model: wrongModel })).status, 400, 'модель чужого раннера');
+      assert.strictEqual((await req('POST', '/api/tiers/light', { runner: 'no-such', variant: 'low' })).status, 400);
+      assert.strictEqual(fs.readFileSync(tiersFile, 'utf8'), before);
+    });
+
+    await test('POST /api/tier-runner: битый JSON → 400', async () => {
+      const r = await new Promise((resolve, reject) => {
+        const u = new URL(baseUrl + '/api/tier-runner');
+        const q = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST', timeout: 5000 }, (res) => {
+          let body = '';
+          res.on('data', c => { body += c; });
+          res.on('end', () => resolve({ status: res.statusCode, body }));
+        });
+        q.on('error', reject);
+        q.end('{не json');
+      });
+      assert.strictEqual(r.status, 400);
+    });
+  } finally {
+    fs.writeFileSync(tiersFile, tiersBackup);
+  }
+
   } finally {
     server.close();
   }

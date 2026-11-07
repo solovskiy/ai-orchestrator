@@ -11,7 +11,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { resolveTier, loadTiers } = require('../lib/agent.js');
+const { resolveTier, tierRunners, loadTiers } = require('../lib/agent.js');
 
 const AGENT_JS = path.join(__dirname, '..', 'lib', 'agent.js');
 
@@ -75,15 +75,64 @@ test('нет конфига уровней: агент работает как �
   assert.strictEqual(r.model, 'p/old');
 });
 
+// ------------------------------------------------------- раннер уровня
+
+const RCFG = {
+  defaultTier: 'medium',
+  runner: 'ds',
+  agents: ['general'],
+  tiers: {
+    light: { runners: { oc: { model: 'oc/flash', variant: 'low' }, ds: { model: 'ds/flash', variant: 'low' } } },
+    medium: { runners: { oc: { model: 'oc/flash', variant: '' }, ds: { model: 'ds/pro', variant: 'medium' } } },
+    heavy: { worktree: true, runners: { oc: { model: 'oc/pro', variant: 'high' }, ds: { model: 'ds/pro', variant: 'high' } } },
+  },
+};
+
+test('активный раннер: модель и variant из его блока, runner в результате', () => {
+  assert.deepStrictEqual(resolveTier('general', AGENT, 'medium', RCFG),
+    { tier: 'medium', model: 'ds/pro', variant: 'medium', worktree: false, runner: 'ds' });
+  const oc = resolveTier('general', AGENT, 'light', { ...RCFG, runner: 'oc' });
+  assert.strictEqual(oc.model, 'oc/flash');
+  assert.strictEqual(oc.runner, 'oc');
+});
+
+test('пустой variant раннера не подменяется variant агента', () => {
+  const r = resolveTier('general', AGENT, 'medium', { ...RCFG, runner: 'oc' });
+  assert.strictEqual(r.variant, '');
+});
+
+test('worktree уровня общий для раннеров', () => {
+  assert.strictEqual(resolveTier('general', AGENT, 'heavy', RCFG).worktree, true);
+  assert.strictEqual(resolveTier('general', AGENT, 'heavy', { ...RCFG, runner: 'oc' }).worktree, true);
+});
+
+test('раннера нет в блоке уровня — ошибка, а не чужая модель', () => {
+  assert.throws(() => resolveTier('general', AGENT, 'light', { ...RCFG, runner: 'codex' }), /нет настроек для раннера codex.*oc, ds/);
+});
+
+test('tierRunners: только раннеры, описанные во всех уровнях', () => {
+  assert.deepStrictEqual(tierRunners(RCFG), ['oc', 'ds']);
+  const partial = { ...RCFG, tiers: { ...RCFG.tiers, heavy: { runners: { oc: { model: 'oc/pro', variant: 'high' } } } } };
+  assert.deepStrictEqual(tierRunners(partial), ['oc']);
+  assert.deepStrictEqual(tierRunners(CFG), []);
+  assert.deepStrictEqual(tierRunners(null), []);
+});
+
 // ------------------------------------------------------- боевой lib/tiers.json
 
-test('lib/tiers.json валиден: у всех уровней есть модель и variant, defaultTier существует', () => {
+test('lib/tiers.json валиден: у каждого уровня и раннера есть модель и variant, defaultTier существует', () => {
   const cfg = loadTiers();
   assert.ok(cfg, 'lib/tiers.json не читается');
   assert.ok(cfg.tiers[cfg.defaultTier], `defaultTier ${cfg.defaultTier} нет среди уровней`);
+  const runners = tierRunners(cfg);
+  assert.ok(runners.length, 'не описан ни один раннер, общий для всех уровней');
+  assert.ok(runners.includes(cfg.runner), `активный раннер ${cfg.runner} не описан во всех уровнях`);
   for (const [name, t] of Object.entries(cfg.tiers)) {
-    assert.ok(t.model && t.model.includes('/'), `${name}: model должна быть вида провайдер/модель`);
-    assert.ok(t.variant, `${name}: нужен variant`);
+    for (const rn of runners) {
+      const r = t.runners[rn];
+      assert.ok(r.model && r.model.includes('/'), `${name}/${rn}: model должна быть вида провайдер/модель`);
+      assert.strictEqual(typeof r.variant, 'string', `${name}/${rn}: variant должен быть строкой (пустая — без variant)`);
+    }
   }
   for (const a of cfg.agents) {
     assert.ok(fs.existsSync(path.join(__dirname, '..', 'agents', a + '.json')), `агент ${a} из tiers.json не существует`);
@@ -129,6 +178,14 @@ test('agent-read general без уровня → defaultTier', () => {
   const r = readAgent(['general']);
   assert.strictEqual(r.code, 0, r.err);
   assert.strictEqual(r.out[4], loadTiers().defaultTier);
+});
+
+test('agent-read: раннер (4-я строка) и модель — из активного раннера tiers.json', () => {
+  const cfg = loadTiers();
+  const r = readAgent(['general', 'heavy']);
+  assert.strictEqual(r.code, 0, r.err);
+  assert.strictEqual(r.out[0], cfg.tiers.heavy.runners[cfg.runner].model);
+  assert.strictEqual(r.out[3], cfg.runner);
 });
 
 test('agent-read агента без уровней: 5-я строка пустая', () => {

@@ -71,6 +71,8 @@ tr { cursor: pointer; }
 .detail-panel .field .v { font-size: 13px; }
 label { font-size: 12px; color: var(--muted); display: block; margin-top: 8px; }
 input[type=text], select { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--input-bg); color: var(--fg); font-size: 13px; margin-top: 2px; }
+button.sec { padding: 8px 20px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
+button.sec:hover { background: var(--row-hover); }
 button.primary { padding: 8px 20px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
 button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 12px; }
 .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: rgba(0,0,0,.3); z-index: 9; }
@@ -84,8 +86,6 @@ button.danger { padding: 8px 20px; background: var(--red); color: #fff; border: 
 /* animations */
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .pulse { animation: pulse 1.5s ease-in-out infinite; }
-.agent-card { transition: transform .15s, box-shadow .15s; }
-.agent-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
 /* toast */
 .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
 .toast { padding: 10px 16px; border-radius: 6px; font-size: 13px; color: #fff; animation: fadeIn .2s; max-width: 360px; }
@@ -159,13 +159,36 @@ label .tip { font-weight: normal; }
 .mcp-item .mcp-stale-tag { color: var(--yellow); font-size: 10px; }
 .mcp-item.mcp-stale { border-style: dashed; opacity: 0.8; }
 .mcp-item.mcp-stale.checked { opacity: 1; }
-/* agent cards layout */
-.agent-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 20px; }
-.agent-card-inner { cursor: pointer; }
+/* настройки: строки уровней и сворачиваемый блок «Дополнительно» */
+.tier-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px; gap: 12px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.tier-row:last-of-type { border-bottom: none; }
+.tier-row label { margin-top: 0; }
+.tier-row select { width: 100%; }
+.mpick { position: relative; }
+.mpick-btn { width: 100%; margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; font-weight: 400; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.mpick-btn:hover { border-color: var(--accent); }
+.mpick-cur { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpick-arrow { color: var(--muted); }
+.mpick-pop { position: absolute; z-index: 50; left: 0; right: 0; min-width: 320px; margin-top: 4px; max-height: 360px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); padding: 8px; }
+.mpick-pop[hidden], .mpick-g[hidden], .mpick-i[hidden], .mpick-none[hidden] { display: none; }
+.mpick-q { position: sticky; top: 0; width: 100%; margin: 0 0 6px; box-sizing: border-box; }
+.mpick-g > summary { cursor: pointer; padding: 6px 4px; font-weight: 600; font-size: 13px; user-select: none; }
+.mpick-cnt { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 4px; }
+.mpick-i { padding: 5px 10px 5px 18px; font-size: 13px; cursor: pointer; border-radius: 4px; word-break: break-all; }
+.mpick-i:hover { background: var(--row-hover); }
+.mpick-i.sel { background: var(--accent-bg); color: var(--accent); }
+.mpick-none { padding: 10px; color: var(--muted); font-size: 13px; }
+.tier-name { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; }
+.tier-name span { font-size: 11px; color: var(--muted); }
+@media (max-width: 700px) { .tier-row { grid-template-columns: 1fr 1fr; } .tier-name { grid-column: 1 / -1; padding-bottom: 0; } }
+details.adv { margin-top: 8px; }
+details.adv > summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 2px; user-select: none; }
+details.adv > summary .adv-hint { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 8px; }
 /* editor card */
 #agent-editor { max-width: 860px; }
 #agent-editor h3 { margin-bottom: 12px; font-size: 15px; }
 .ae-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.ae-actions button { margin-top: 0; }
 /* Пока форма агента не заполнена данными с сервера, она заблокирована:
    пустую форму нельзя сохранять — она затирала промпт, права и MCP агента. */
 #agent-editor.ae-loading .ae-section { pointer-events: none; opacity: .5; }
@@ -267,7 +290,7 @@ details.tech .field .v { word-break: break-all; font-family: monospace; font-siz
   <nav>
     <button data-tab="jobs" class="active">Задачи</button>
     <button data-tab="stats">Статистика</button>
-    <button data-tab="settings">Агенты</button>
+    <button data-tab="settings">Настройки</button>
   </nav>
   <span style="flex:1"></span>
   <span id="conn" role="button" tabindex="0" title="Состояние живого обновления. Клик — переподключиться" onclick="reconnectNow()" style="font-size:11px;color:var(--muted);cursor:pointer">◌ подключение…</span>
@@ -1326,6 +1349,12 @@ async function loadStats() {
     h += '</div></div>';
   }
 
+  // Сброс статистики
+  h += '<div class="card"><h3>Сброс статистики</h3>';
+  h += '<p style="color:var(--muted);font-size:13px">Удаляет завершённые задачи (completed / failed / killed) и обнуляет показатели. Запущенные и ожидающие не трогаются.</p>';
+  h += '<button class="danger" onclick="resetStats()">Сбросить статистику</button>';
+  h += '</div>';
+
   $('#main').innerHTML = h;
 }
 
@@ -1333,97 +1362,105 @@ function statCard(label, value) {
   return '<div class="stat"><div class="val">' + esc(String(value)) + '</div><div class="lbl">' + esc(label) + '</div></div>';
 }
 
+async function resetStats() {
+  if (!confirm('Сбросить статистику?\n\nБудут удалены все завершённые задачи (completed / failed / killed). Запущенные и ожидающие останутся.')) return;
+  try {
+    const r = await post('/api/stats/reset', {});
+    if (r.ok) {
+      toast('Сброшено задач: ' + r.removed + (r.skipped ? ', не удалось удалить: ' + r.skipped : ''));
+      loadStats();
+    } else {
+      toast('Ошибка: ' + r.error, 'err');
+    }
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
 // ===================================================================== SETTINGS
 
 async function loadSettings() {
-  const agents = await get('/api/agents');
+  const [agents, tierState, models] = await Promise.all([
+    get('/api/agents'),
+    get('/api/tier-runner').catch(() => null), // нет tiers.json — блок уровней просто не показываем
+    get('/api/models').catch(() => null),      // каталог OpenCode (кэшируется на сервере)
+  ]);
   if (activeTab !== 'settings') return; // ушли с вкладки, пока грузилось
+  window._ocModels = (models && models.models) || [];
+
   let h = '';
 
-  // Карточки агентов
-  h += '<div class="agent-cards">';
-  for (const a of agents) {
-    const pulse = a.running > 0 ? '<span class="pulse" style="color:var(--green);font-size:11px">● ' + a.running + ' running</span>' : '<span style="color:var(--muted);font-size:11px">○ idle</span>';
-    const tools = Object.entries(a.permissions).filter(([_,v]) => v === 'allow').map(([k]) => k).join(', ');
-    const mcpBadges = (a.mcp || []).map(function(s) { return '<span style="background:var(--accent-bg);color:var(--accent);font-size:10px;padding:1px 5px;border-radius:3px">' + esc(s) + '</span>'; }).join(' ');
-    h += '<div class="card agent-card agent-card-inner" onclick="editAgent(\'' + esc(a.name) + '\')">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center">';
-    h += '<strong style="font-size:14px">' + esc(a.name) + '</strong> <span style="font-size:11px;color:var(--muted)">' + esc(a.mode) + '</span>';
-    h += '</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin:3px 0">' + esc(a.runner || 'auto') + ' / ' + esc(a.model.split('/').pop()) + ' · variant: ' + esc(a.variant || '---') + ' · worktree: ' + (a.worktree ? '✓' : '✗') + '</div>';
-    h += '<div style="font-size:11px;color:var(--muted)">tools: ' + esc(tools.slice(0, 50)) + (tools.length > 50 ? '...' : '') + '</div>';
-    if (mcpBadges) h += '<div style="font-size:11px;color:var(--muted);margin-top:2px">mcp: ' + mcpBadges + '</div>';
-    h += '<div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">' + pulse;
-    h += '<span><button class="primary" style="font-size:11px;padding:2px 10px;margin:0" onclick="event.stopPropagation();testRun(\'' + esc(a.name) + '\')">▶ Run</button></span>';
-    h += '</div>';
-    h += '</div>';
+  // Раннер + три уровня: модель и мышление
+  if (tierState && tierState.runners && tierState.runners.length) {
+    h += renderTierSettings(tierState);
+  } else {
+    h += '<div class="card"><h3>Раннер и уровни</h3><p style="color:var(--muted);font-size:13px">lib/tiers.json не найден или в нём не описаны раннеры.</p></div>';
   }
-  h += '</div>';
 
-  // Новый агент
-  h += '<div class="card"><h3>Создать агента</h3>';
-  h += '<input type="text" id="new-agent-name" placeholder="имя (латиница, дефисы)" style="width:240px;display:inline"> ';
-  h += '<button class="primary" onclick="createAgent()" style="margin-top:0">Создать</button>';
-  h += '</div>';
+  // Дополнительно: редактор единственного агента + очистка
+  const advAgent = (agents.find(a => a.name === 'general') || agents[0] || {}).name || '';
+  h += '<details id="advanced" class="adv" ontoggle="onAdvancedToggle(this)">';
+  h += '<summary>Дополнительно <span class="adv-hint">промпт и права агента, очистка</span></summary>';
 
-  // Редактор (скрыт, показывается при клике)
-  h += '<div class="card" id="agent-editor" style="display:none"><h3>Редактор: <span id="ae-name"></span></h3>';
+  if (advAgent) {
+    h += '<div class="card" id="agent-editor" style="display:none"><h3>Агент: <span id="ae-name"></span></h3>';
+    h += '<p style="color:var(--muted);font-size:12px;margin:0 0 12px">Модель, раннер и мышление задаются уровнями выше, здесь их нет.</p>';
 
-  // --- Секция: Модель и раннер ---
-  h += '<div class="ae-section">';
-  h += '<div class="ae-section-title">Модель и раннер</div>';
-  h += '<div class="ae-grid">';
-  h += '<div><label>Раннер ' + tip('Какой CLI выполняет задачу. opencode — шлюз ко многим моделям разных провайдеров. claude/codex/gemini — конкретный CLI со своим фиксированным каталогом моделей.') + '</label><select id="ae-runner" onchange="onRunnerSelect()"></select></div>';
-  h += '<div><label>Модель ' + tip('Выбери из списка или введи свою. Список зависит от раннера слева. 🔄 — обновить из opencode models (только для раннера opencode).') + '</label><div style="display:flex;gap:4px"><select id="ae-model" onchange="onModelSelect()" style="flex:1"></select><button onclick="refreshModels();return false" title="Обновить список из opencode" style="padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:5px;cursor:pointer">🔄</button></div><input type="text" id="ae-model-custom" placeholder="или введи свою модель" style="display:none;margin-top:4px;width:100%"></div>';
-  h += '<div><label>Variant ' + tip('Уровень reasoning: minimal, low, medium, high, max. Выше = умнее но дороже. medium для кода, high для ресёрча.') + '</label><select id="ae-variant">';
-  for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
-  h += '</select></div>';
-  h += '<div><label>Mode ' + tip('primary — в Tab-цикле opencode. subagent — только по @имени. all — везде.') + '</label><select id="ae-mode"><option>primary</option><option>subagent</option><option>all</option></select></div>';
-  h += '<div><label>Temperature ' + tip('Креативность: 0.0 = строго по факту, 1.0 = максимально креативно. Код/анализ: 0-0.2, креатив: 0.5-1.0') + '</label><input type="text" id="ae-temp" placeholder="0.2"></div>';
-  h += '</div></div>';
+    // Скрытая секция: поля нужны editAgent/saveAgent, чтобы сохранение не стирало
+    // runner/model/variant агента, но редактировать их тут не надо.
+    h += '<div class="ae-section" style="display:none">';
+    h += '<select id="ae-runner" onchange="onRunnerSelect()"></select>';
+    h += '<select id="ae-model" onchange="onModelSelect()"></select><input type="text" id="ae-model-custom" style="display:none">';
+    h += '<select id="ae-variant">';
+    for (const v of ['','minimal','low','medium','high','max']) h += '<option value="' + v + '">' + (v || 'нет') + '</option>';
+    h += '</select>';
+    h += '</div>';
 
-  // --- Секция: Поведение ---
-  h += '<div class="ae-section">';
-  h += '<div class="ae-section-title">Поведение</div>';
-  h += '<div class="ae-grid">';
-  h += '<div><label>Worktree ' + tip('Да — агент в изолированной git-ветке (изменения не в основную ветку). Нет — прямо в репозитории. Для кода: всегда да.') + '</label><select id="ae-worktree"><option value="1">да</option><option value="0">нет</option></select></div>';
-  h += '<div><label>Auto-commit ' + tip('Если агент забыл git commit — обёртка сделает сама. Только для worktree-задач.') + '</label><select id="ae-autocommit"><option value="1">да</option><option value="0">нет</option></select></div>';
-  h += '<div><label>Max Steps ' + tip('Лимит итераций агента. После N шагов остановится. Простые: 5-10, сложные: 30-50. Защита от циклов.') + '</label><input type="text" id="ae-maxsteps" placeholder="20"></div>';
-  h += '<div><label>Timeout (сек) ' + tip('Таймаут ожидания. По умолч. 1800 (30 мин). Быстрые задачи: 120-300, длительные: до 3600.') + '</label><input type="text" id="ae-timeout" placeholder="1800"></div>';
-  h += '</div></div>';
+    // --- Секция: Поведение ---
+    h += '<div class="ae-section">';
+    h += '<div class="ae-section-title">Поведение</div>';
+    h += '<div class="ae-grid">';
+    h += '<div><label>Mode ' + tip('primary — в Tab-цикле opencode. subagent — только по @имени. all — везде.') + '</label><select id="ae-mode"><option>primary</option><option>subagent</option><option>all</option></select></div>';
+    h += '<div><label>Temperature ' + tip('Креативность: 0.0 = строго по факту, 1.0 = максимально креативно. Код/анализ: 0-0.2, креатив: 0.5-1.0') + '</label><input type="text" id="ae-temp" placeholder="0.2"></div>';
+    h += '<div><label>Worktree ' + tip('Да — агент в изолированной git-ветке. Нет — прямо в репозитории. Уровень «Тяжёлый» включает worktree сам, независимо от этой настройки.') + '</label><select id="ae-worktree"><option value="1">да</option><option value="0">нет</option></select></div>';
+    h += '<div><label>Auto-commit ' + tip('Если агент забыл git commit — обёртка сделает сама. Только для worktree-задач.') + '</label><select id="ae-autocommit"><option value="1">да</option><option value="0">нет</option></select></div>';
+    h += '<div><label>Max Steps ' + tip('Лимит итераций агента. После N шагов остановится. Простые: 5-10, сложные: 30-50. Защита от циклов.') + '</label><input type="text" id="ae-maxsteps" placeholder="20"></div>';
+    h += '<div><label>Timeout (сек) ' + tip('Таймаут ожидания. По умолч. 1800 (30 мин). Быстрые задачи: 120-300, длительные: до 3600.') + '</label><input type="text" id="ae-timeout" placeholder="1800"></div>';
+    h += '</div></div>';
 
-  // --- Секция: Доступ ---
-  h += '<div class="ae-section">';
-  h += '<div class="ae-section-title">Доступ</div>';
-  h += '<label>Permissions ' + tip('Какие инструменты разрешены (через запятую). Остальные = deny. Доступны: bash, read, edit, glob, grep, webfetch, websearch, task, skill, lsp.') + '</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
-  h += '</div>';
+    // --- Секция: Доступ ---
+    h += '<div class="ae-section">';
+    h += '<div class="ae-section-title">Доступ</div>';
+    h += '<label>Permissions ' + tip('Какие инструменты разрешены (через запятую). Остальные = deny. Доступны: bash, read, edit, glob, grep, webfetch, websearch, task, skill, lsp.') + '</label><input type="text" id="ae-perms" placeholder="bash,read,edit,glob,grep">';
+    h += '</div>';
 
-  // --- Секция: MCP-серверы (заполняется динамически) ---
-  h += '<div class="ae-section">';
-  h += '<div class="ae-section-title">MCP-серверы</div>';
-  h += '<div id="mcp-checkboxes" style="color:var(--muted);font-size:12px">загрузка...</div>';
-  h += '</div>';
+    // --- Секция: MCP-серверы (заполняется динамически) ---
+    h += '<div class="ae-section">';
+    h += '<div class="ae-section-title">MCP-серверы</div>';
+    h += '<div id="mcp-checkboxes" style="color:var(--muted);font-size:12px">загрузка...</div>';
+    h += '</div>';
 
-  // --- Секция: Промпт ---
-  h += '<div class="ae-section">';
-  h += '<div class="ae-section-title">Промпт</div>';
-  h += '<label>Description ' + tip('Одно предложение: что делает агент и когда применять. Видно в opencode agent list.') + '</label><input type="text" id="ae-desc">';
-  h += '<label>System Prompt ' + tip('Системный промпт — главные инструкции для агента. Чем конкретнее правила — тем лучше результат.') + '</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
-  h += '</div>';
+    // --- Секция: Промпт ---
+    h += '<div class="ae-section">';
+    h += '<div class="ae-section-title">Промпт</div>';
+    h += '<label>Description ' + tip('Одно предложение: что делает агент и когда применять. Видно в opencode agent list.') + '</label><input type="text" id="ae-desc">';
+    h += '<label>System Prompt ' + tip('Системный промпт — главные инструкции для агента. Чем конкретнее правила — тем лучше результат.') + '</label><textarea id="ae-prompt" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>';
+    h += '</div>';
 
-  // Кнопки
-  h += '<div class="ae-actions">';
-  h += '<button class="primary" id="ae-save" onclick="saveAgent()" disabled>💾 Сохранить</button>';
-  h += '<button onclick="exportAgent(\'' + esc((window._editingAgent || '')) + '\')" id="ae-export" style="padding:8px 16px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;cursor:pointer" disabled>📥 Export .md</button>';
-  h += '<button class="danger" id="ae-delete" onclick="deleteAgent()" disabled>🗑 Удалить</button>';
-  h += '<button onclick="closeAgentEditor()">Отмена</button>';
-  h += '</div></div>';
+    // Кнопки
+    h += '<div class="ae-actions">';
+    h += '<button class="primary" id="ae-save" onclick="saveAgent()" disabled>💾 Сохранить</button>';
+    h += '<button class="sec" onclick="exportAgent(window._editingAgent)" id="ae-export" style="margin-top:0" disabled>📥 Export .md</button>';
+    h += '<button class="sec" onclick="editAgent(window._editingAgent)" style="margin-top:0">↺ Отменить правки</button>';
+    h += '</div></div>';
+  }
 
   // Очистка
   h += '<div class="card"><h3>Очистка</h3>';
   h += '<p style="color:var(--muted);font-size:13px">worktree-gc --apply + clean --days 7</p>';
   h += '<button class="danger" onclick="runCleanup()">Очистить</button>';
   h += '<pre id="cleanup-output" style="margin-top:8px;display:none"></pre></div>';
+  h += '</details>';
 
   $('#main').innerHTML = h;
   // форма пересоздана пустой и скрытой — прежнее редактирование недействительно
@@ -1431,9 +1468,203 @@ async function loadSettings() {
   window._agentEditSeq = (window._agentEditSeq || 0) + 1;
   window._agentEditorReady = false;
   window._editingAgent = null;
+  window._advAgent = advAgent;
   window._runnersPromise = loadRunners();
   await window._runnersPromise;
+  // после сохранения агента страница перерисовалась — раскрытый блок раскрываем снова
+  if (window._advOpen) { const d = $('#advanced'); if (d) d.open = true; }
 }
+
+// Раскрытие «Дополнительно»: редактор агента грузим лениво, при первом открытии.
+function onAdvancedToggle(el) {
+  window._advOpen = el.open;
+  if (el.open && window._advAgent && !window._editingAgent) editAgent(window._advAgent);
+}
+
+// ---- Раннер и уровни (lib/tiers.json)
+
+const TIER_LABELS = { light: 'Лёгкий', medium: 'Средний', heavy: 'Тяжёлый' };
+const TIER_HINTS = { light: 'поиск, мелочи', medium: 'обычная работа', heavy: 'сложный код' };
+const TIER_VARIANTS = [['', 'нет'], ['minimal', 'minimal'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['max', 'max']];
+
+function optionHtml(value, text, selected) {
+  return '<option value="' + esc(value) + '"' + (selected ? ' selected' : '') + '>' + esc(text) + '</option>';
+}
+
+// Выбор модели: кнопка с текущим значением + выпадающая панель с поиском и
+// сворачиваемыми группами по провайдеру (у OpenCode каталог на сотни моделей,
+// обычный <select> не годится). Значение лежит в скрытом input #tier-model-<tn>,
+// его читает saveTier.
+// У opencode каталог живой (/api/models); у остальных раннеров — короткий список
+// из /api/tier-runner. Текущей модели может не быть в каталоге — показываем её
+// отдельной группой, иначе выбор молча уехал бы на другую.
+function modelGroups(runner, current) {
+  let models;
+  if (runner.models) models = runner.models.map(id => ({ id, label: id, provider: runner.name }));
+  else models = (window._ocModels || []).map(m => ({ id: m.id, label: m.label || m.id, provider: m.provider }));
+  const groups = {};
+  for (const m of models) (groups[m.provider] = groups[m.provider] || []).push(m);
+  const out = Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).map(([name, items]) => ({ name, items }));
+  if (current && !models.some(m => m.id === current)) out.unshift({ name: 'текущая (нет в каталоге)', items: [{ id: current, label: current }] });
+  return out;
+}
+
+function modelPickerHtml(tn, runner, current) {
+  const groups = modelGroups(runner, current);
+  let h = '<div class="mpick">';
+  h += '<input type="hidden" id="tier-model-' + esc(tn) + '" value="' + esc(current || '') + '">';
+  h += '<button type="button" class="mpick-btn" data-tn="' + esc(tn) + '" onclick="mpickToggle(this)">' +
+    '<span class="mpick-cur">' + esc(current || '— не выбрана —') + '</span><span class="mpick-arrow">▾</span></button>';
+  h += '<div class="mpick-pop" hidden>';
+  h += '<input type="text" class="mpick-q" placeholder="Поиск модели…" autocomplete="off" oninput="mpickFilter(this)">';
+  for (const g of groups) {
+    // раскрыта группа с текущей моделью; если группа одна — раскрыта всегда
+    const open = groups.length === 1 || g.items.some(m => m.id === current);
+    h += '<details class="mpick-g"' + (open ? ' open data-open="1"' : '') + '><summary>' + esc(g.name) + ' <span class="mpick-cnt">' + g.items.length + '</span></summary>';
+    for (const m of g.items) {
+      h += '<div class="mpick-i' + (m.id === current ? ' sel' : '') + '" data-id="' + esc(m.id) + '" data-q="' + esc((m.id + ' ' + m.label).toLowerCase()) + '" title="' + esc(m.id) + '" onclick="mpickPick(this)">' + esc(m.label.startsWith(g.name + '/') ? m.label.slice(g.name.length + 1) : m.label) + '</div>';
+    }
+    h += '</details>';
+  }
+  h += '<div class="mpick-none" hidden>Ничего не найдено</div>';
+  h += '</div></div>';
+  return h;
+}
+
+function mpickClose() {
+  document.querySelectorAll('.mpick-pop:not([hidden])').forEach(p => { p.hidden = true; });
+}
+
+function mpickToggle(btn) {
+  const pop = btn.parentElement.querySelector('.mpick-pop');
+  const wasHidden = pop.hidden;
+  mpickClose();
+  if (!wasHidden) return;
+  pop.hidden = false;
+  const q = pop.querySelector('.mpick-q');
+  q.value = '';
+  mpickFilter(q);
+  q.focus();
+  const sel = pop.querySelector('.mpick-i.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+// Поиск: все слова запроса должны входить в id модели. Пока запрос не пуст —
+// группы с совпадениями раскрыты, пустые скрыты; очистили — вернулось исходное состояние.
+function mpickFilter(input) {
+  const pop = input.closest('.mpick-pop');
+  const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+  let total = 0;
+  pop.querySelectorAll('.mpick-g').forEach(g => {
+    let shown = 0;
+    g.querySelectorAll('.mpick-i').forEach(it => {
+      const ok = words.every(w => it.dataset.q.includes(w));
+      it.hidden = !ok;
+      if (ok) shown++;
+    });
+    total += shown;
+    g.hidden = shown === 0;
+    g.open = words.length ? shown > 0 : g.dataset.open === '1';
+  });
+  pop.querySelector('.mpick-none').hidden = total > 0;
+}
+
+function mpickPick(item) {
+  const wrap = item.closest('.mpick');
+  const hidden = wrap.querySelector('input[type=hidden]');
+  const id = item.dataset.id;
+  const changed = hidden.value !== id;
+  hidden.value = id;
+  wrap.querySelector('.mpick-cur').textContent = id;
+  wrap.querySelectorAll('.mpick-i.sel').forEach(x => x.classList.remove('sel'));
+  item.classList.add('sel');
+  mpickClose();
+  if (changed) saveTier(wrap.querySelector('.mpick-btn').dataset.tn);
+}
+
+document.addEventListener('click', e => { if (!e.target.closest('.mpick')) mpickClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') mpickClose(); });
+
+function tierVariantOptions(current) {
+  let h = '';
+  const list = TIER_VARIANTS.slice();
+  if (current && !list.some(v => v[0] === current)) list.push([current, current]);
+  for (const [v, text] of list) h += optionHtml(v, text, v === (current || ''));
+  return h;
+}
+
+function renderTierSettings(s) {
+  window._tierState = s;
+  const cur = s.runners.find(r => r.name === s.runner);
+  let h = '<div id="tier-settings">';
+
+  // 1. Раннер
+  h += '<div class="card"><h3>Раннер</h3>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  for (const r of s.runners) {
+    const on = r.name === s.runner;
+    h += '<button class="' + (on ? 'primary' : 'sec') + '" style="margin:0" onclick="setTierRunner(\'' + esc(r.name) + '\')" title="' + esc(r.note) + '">' + (on ? '● ' : '○ ') + esc(r.label) + '</button>';
+  }
+  h += '</div>';
+  if (cur && cur.note) h += '<p style="color:var(--muted);font-size:12px;margin:8px 0 0">' + esc(cur.note) + '. Применяется к новым задачам, запущенные не затрагиваются.</p>';
+  if (!cur) h += '<p style="color:var(--red);font-size:12px;margin:8px 0 0">В tiers.json не выбран раннер — выбери его выше.</p>';
+  h += '</div>';
+
+  // 2. Три уровня
+  if (cur) {
+    h += '<div class="card"><h3>Уровни</h3>';
+    for (const [tn, t] of Object.entries(cur.tiers)) {
+      const meta = (s.tiers && s.tiers[tn]) || {};
+      h += '<div class="tier-row">';
+      h += '<div class="tier-name" title="' + esc(meta.description || '') + '"><strong>' + esc(TIER_LABELS[tn] || tn) + '</strong>' +
+        '<span>' + esc(TIER_HINTS[tn] || '') + (meta.worktree ? ' · worktree' : '') + '</span></div>';
+      h += '<div><label>Модель</label>' + modelPickerHtml(tn, cur, t.model) + '</div>';
+      h += '<div><label>Мышление</label><select id="tier-variant-' + esc(tn) + '" onchange="saveTier(\'' + esc(tn) + '\')">' + tierVariantOptions(t.variant) + '</select></div>';
+      h += '</div>';
+    }
+    h += '<p style="color:var(--muted);font-size:12px;margin:10px 0 0">Изменения сохраняются сразу. У каждого раннера свой набор моделей — при переключении раннера ничего не теряется.</p>';
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+async function setTierRunner(name) {
+  try {
+    const r = await post('/api/tier-runner', { runner: name });
+    if (!r.ok) { toast('Ошибка: ' + r.error, 'err'); return; }
+    const box = $('#tier-settings');
+    if (box) box.outerHTML = renderTierSettings(r);
+    const label = (r.runners.find(x => x.name === r.runner) || {}).label || r.runner;
+    toast('Раннер: ' + label);
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  }
+}
+
+async function saveTier(tn) {
+  const m = $('#tier-model-' + tn), v = $('#tier-variant-' + tn);
+  if (!m || !v) return;
+  m.disabled = v.disabled = true;
+  try {
+    const r = await post('/api/tiers/' + tn, { model: m.value, variant: v.value });
+    if (!r.ok) {
+      toast('Ошибка: ' + r.error, 'err');
+      // на экране осталось несохранённое значение — возвращаем то, что в файле
+      const fresh = await get('/api/tier-runner', { nocache: true });
+      const box = $('#tier-settings');
+      if (box) box.outerHTML = renderTierSettings(fresh);
+      return;
+    }
+    window._tierState = r;
+    toast((TIER_LABELS[tn] || tn) + ': сохранено');
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'err');
+  } finally {
+    m.disabled = v.disabled = false;
+  }
+}
+
 
 // Блокирует/разблокирует форму агента. Пока форма не заполнена данными с
 // сервера, сохранять нельзя: пустая форма, записанная в файл, стирала промпт,
@@ -1442,7 +1673,7 @@ function setAgentEditorReady(ready) {
   window._agentEditorReady = ready;
   const ed = $('#agent-editor');
   if (ed) ed.classList.toggle('ae-loading', !ready);
-  for (const id of ['#ae-save', '#ae-export', '#ae-delete']) {
+  for (const id of ['#ae-save', '#ae-export']) {
     const b = $(id);
     if (b) b.disabled = !ready;
   }
@@ -1524,7 +1755,6 @@ async function editAgent(name) {
     }
 
     setAgentEditorReady(true);
-    $('#agent-editor').scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
     // половину формы пользователю не оставляем: закрываем редактор, сохранить её нельзя
     if (seq === window._agentEditSeq) {
@@ -1532,22 +1762,6 @@ async function editAgent(name) {
       toast('Не удалось открыть агента ' + name + ': ' + e.message, 'err');
     }
   }
-}
-
-async function createAgent() {
-  const name = $('#new-agent-name').value.trim();
-  if (!name) return toast('Введи имя', 'err');
-  const r = await post('/api/agents/' + name, {
-    name, model: 'opencode/deepseek-v4-flash-free', variant: 'medium',
-    mode: 'primary', worktree: false, timeout: 1800, autoCommit: false,
-    permissions: { bash: 'allow', read: 'allow', edit: 'allow', glob: 'allow', grep: 'allow' },
-    systemPrompt: '', description: '',
-    // сервер откажет (409), если агент с таким именем уже есть, — иначе
-    // «создание» затирало существующего агента вместе с промптом
-    _create: true,
-  });
-  if (r.ok) { loadSettings(); toast('создан: ' + name); }
-  else toast(r.error, 'err');
 }
 
 async function saveAgent() {
@@ -1624,15 +1838,6 @@ async function saveAgent() {
     const b = $('#ae-save');
     if (b && window._agentEditorReady) b.disabled = false;
   }
-}
-
-async function deleteAgent() {
-  const name = $('#ae-name').textContent;
-  if (!confirm('Удалить агента ' + name + '?')) return;
-  const r = await fetch(API + '/api/agents/' + name, { method: 'DELETE' });
-  const j = await r.json();
-  if (j.ok) { $('#agent-editor').style.display = 'none'; loadSettings(); toast('удалён: ' + name); }
-  else toast(j.error, 'err');
 }
 
 async function runCleanup() {
@@ -1924,18 +2129,6 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') { closeDetail(); closeModal(); }
   if (e.ctrlKey && e.key === 's') { e.preventDefault(); const s = $('#ae-name'); if (s && s.textContent) saveAgent(); }
 });
-
-// ===================================================================== TEST RUN
-
-async function testRun(name) {
-  showModal('<h3>▶ Test Run: ' + esc(name) + '</h3>' +
-    '<label>Промпт ' + tip('Короткий тестовый запрос. Например: прочитай README.md и напиши краткое резюме. Или: создай файл test.txt с текстом ok.') + '</label><textarea id="tr-prompt" rows="3" style="width:100%">echo "hello from ' + esc(name) + '"</textarea>' +
-    '<label>Repo ' + tip('В каком репозитории работать. . = текущая директория. Или полный путь: /d/work/project') + '</label><input type="text" id="tr-repo" value=".">' +
-    '<div style="margin-top:8px;display:flex;gap:8px">' +
-    '<button class="primary" onclick="doTestRun(\'' + name + '\')">Запустить</button>' +
-    '<button onclick="closeModal()">Отмена</button></div>' +
-    '<pre id="tr-output" style="margin-top:8px;display:none;max-height:300px;overflow:auto;font-size:11px"></pre>');
-}
 
 async function doTestRun(name) {
   const prompt = $('#tr-prompt').value;
