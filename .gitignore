@@ -25,3 +25,9 @@ test-agent-v3-result.md
 
 # Ярлык запуска дашборда (абсолютные пути этой машины)
 *.lnk
+
+# Артефакты playwright-mcp (скриншоты, логи консоли браузера)
+.playwright-mcp/
+
+# Служебный файл Windows
+desktop.ini
