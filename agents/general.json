@@ -1,8 +1,8 @@
 {
   "name": "general",
   "runner": "",
-  "model": "claude-ds/deepseek-v4-pro",
-  "variant": "medium",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "variant": "",
   "mode": "primary",
   "worktree": false,
   "autoCommit": false,

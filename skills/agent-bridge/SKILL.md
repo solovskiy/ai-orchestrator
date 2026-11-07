@@ -14,26 +14,30 @@ description: Делегирование ресёрча и написания к�
 Bash (`run_in_background: true`) — харнесс сам пришлёт уведомление:
 
 ```bash
-agent delegate <агент> "<задача>"
-agent delegate <агент> "<задача>" --verify "npm test"
-agent delegate <агент> --prompt-file tz.md --verify "npm run typecheck && npm test"
+agent delegate general "<задача>"                      # medium (по умолчанию)
+agent delegate general "<задача>" --tier light
+agent delegate general --prompt-file tz.md --tier heavy --verify "npm run typecheck && npm test"
 ```
 
-`<агент>` несёт модель/worktree/permissions/systemPrompt из
-`agents/<агент>.json` — руками их не подбирать.
+Рабочий агент один — `general`. «Сложность» задаёт уровень `--tier`
+light|medium|heavy (модель, variant и worktree — в `lib/tiers.json`):
+`light` — поиск/мелочи, `medium` — обычная работа, `heavy` — сложный
+код и сам работает в своём worktree. Модель за уровнем не запоминать.
 
 ## Какой агент взять
 
-Ростер растёт — сверяться **раз за сессию**, не хардкодить имена:
+Ростер — один `general`, сверяться **раз за сессию** (уровни и модели
+могут меняться через дашборд/JSON), не хардкодить имена и модели:
 
 ```bash
-agent agents               # имя / модель / worktree да-нет / инструменты
+agent agents               # имя / модель / worktree да-нет / инструменты + таблица уровней
 agent agent show <name>    # полный JSON — description говорит, когда взять другой
 ```
 
-`worktree: нет` — только читает/пишет отчёт, `--repo` любая папка.
-`worktree: да` — коммитит в свою ветку, `--repo` обязан быть
-git-репозиторием. Нет подходящего агента — `agent agent create <name>`.
+`worktree: нет` (light/medium) — работает прямо в репо, `--repo` любая
+папка. `worktree: да` (heavy) — своя ветка, `--repo` обязан быть
+git-репозиторием. Нужен агент под другой MCP/исполнителя —
+`agent agent create <name>`.
 
 ## После worktree-задачи: accept / discard
 
