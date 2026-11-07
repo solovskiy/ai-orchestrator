@@ -11,7 +11,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { resolveTier, tierRunners, loadTiers } = require('../lib/agent.js');
+const { resolveTier, tierRunners, loadTiers, effectiveTier } = require('../lib/agent.js');
 
 const AGENT_JS = path.join(__dirname, '..', 'lib', 'agent.js');
 
@@ -170,7 +170,9 @@ test('agent-read general --tier heavy: 5 строк, worktree=1, уровень 
   const r = readAgent(['general', 'heavy']);
   assert.strictEqual(r.code, 0, r.err);
   assert.strictEqual(r.out[1], '1');
-  assert.strictEqual(r.out[2], 'high');
+  // variant меняется через дашборд — сверяем с активным блоком раннера, а не с константой
+  const cfg = loadTiers();
+  assert.strictEqual(r.out[2], effectiveTier('heavy', cfg.tiers.heavy, cfg).variant || '');
   assert.strictEqual(r.out[4], 'heavy');
 });
 

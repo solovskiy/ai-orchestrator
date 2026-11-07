@@ -85,13 +85,15 @@ test('claude-ds: продолжение получает тот же --max-turns
   assert.strictEqual(val(b, '--resume'), 'SESS');
 });
 
-test('opencode: продолжение получает --agent и --variant корня', () => {
+test('opencode: продолжение получает --agent и variant корня (суффиксом модели)', () => {
   const root = mkJob('oc-root', ['runner=opencode', 'model=opencode/x', 'variant=medium', `agent=${FIXTURE}`]);
   const child = mkContinuation('oc-child', root);
 
   const b = buildArgs(child);
   assert.strictEqual(b[b.indexOf('--agent') + 1], FIXTURE);
-  assert.strictEqual(b[b.indexOf('--variant') + 1], 'medium');
+  // opencode v2: флага --variant нет, вариант — суффикс модели provider/model#variant
+  assert.ok(!b.includes('--variant'));
+  assert.strictEqual(b[b.indexOf('--model') + 1], 'opencode/x#medium');
   assert.strictEqual(b[b.indexOf('--session') + 1], 'SESS');
 });
 
