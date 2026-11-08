@@ -1,6 +1,6 @@
 {
   "defaultTier": "medium",
-  "runner": "claude-ds",
+  "runner": "opencode",
   "agents": [
     "general"
   ],
