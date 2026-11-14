@@ -10,7 +10,7 @@
       "runners": {
         "opencode": {
           "model": "opencode-go/deepseek-v4.1-flash",
-          "variant": "minimal"
+          "variant": "low"
         },
         "claude-ds": {
           "model": "claude-ds/deepseek-v4-pro",
@@ -23,7 +23,7 @@
       "runners": {
         "opencode": {
           "model": "opencode-go/deepseek-v4.1-flash",
-          "variant": "medium"
+          "variant": "high"
         },
         "claude-ds": {
           "model": "claude-ds/deepseek-v4-flash",
@@ -37,7 +37,7 @@
       "runners": {
         "opencode": {
           "model": "opencode-go/deepseek-v4-pro",
-          "variant": "medium"
+          "variant": "max"
         },
         "claude-ds": {
           "model": "claude-ds/deepseek-v4-pro",
